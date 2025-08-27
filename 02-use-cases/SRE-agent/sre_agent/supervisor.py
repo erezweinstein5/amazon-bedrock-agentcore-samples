@@ -215,9 +215,11 @@ class SupervisorAgent:
         # Initialize memory system
         self.memory_config = _load_memory_config()
         if self.memory_config.enabled:
+            # Use region from llm_kwargs if provided for bedrock
+            memory_region = llm_kwargs.get("region_name", self.memory_config.region) if llm_provider == "bedrock" else self.memory_config.region
             self.memory_client = SREMemoryClient(
                 memory_name=self.memory_config.memory_name,
-                region=self.memory_config.region,
+                region=memory_region,
                 force_delete=force_delete_memory,
             )
             self.memory_hooks = MemoryHookProvider(self.memory_client)

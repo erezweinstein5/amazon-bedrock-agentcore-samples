@@ -10,6 +10,7 @@ This document provides a comprehensive overview of all configuration files used 
 | `gateway/.env` | ENV | Gateway authentication settings | Yes | No |
 | `gateway/config.yaml` | YAML | AgentCore Gateway configuration | Yes | Partially (provider_arn by [setup](../README.md#use-case-setup)) |
 | `deployment/.env` | ENV | Soft link to `sre_agent/.env` | No (uses sre_agent/.env) | N/A (symlink) |
+| `deployment/.cognito_config` | ENV | Cognito configuration details | No | Yes (by [setup_cognito.sh](../deployment/setup_cognito.sh)) |
 | `sre_agent/config/agent_config.yaml` | YAML | Agent-to-tool mapping configuration | No | Yes (gateway URI by [setup](../README.md#use-case-setup)) |
 | `scripts/user_config.yaml` | YAML | Script-specific user configuration | No | No |
 | `backend/openapi_specs/*.yaml` | YAML | OpenAPI specifications for tools | No | Yes (from templates by [setup](../README.md#use-case-setup)) |
@@ -36,6 +37,7 @@ The following files are automatically modified by the setup scripts:
 2. **`sre_agent/config/agent_config.yaml`** - The `gateway.uri` field is updated with the created gateway URI
 3. **`gateway/config.yaml`** - The `provider_arn` field is updated when creating the credential provider
 4. **`backend/openapi_specs/*.yaml`** - Generated from templates with your backend domain
+5. **`deployment/.cognito_config`** - Created by `setup_cognito.sh` with USER_POOL_ID, CLIENT_ID, CLIENT_SECRET, and other Cognito settings
 
 ## Environment Variables
 

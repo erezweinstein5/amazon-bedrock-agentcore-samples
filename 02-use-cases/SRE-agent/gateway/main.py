@@ -64,6 +64,20 @@ def _create_agentcore_client(region: str, endpoint_url: str) -> Any:
     Returns:
         Configured boto3 client for bedrock-agentcore-control
     """
+    # Validate that the region matches the endpoint URL
+    import re
+    endpoint_region_match = re.search(r'\.([a-z0-9-]+)\.amazonaws\.com', endpoint_url)
+    if endpoint_region_match:
+        endpoint_region = endpoint_region_match.group(1)
+        if endpoint_region != region:
+            error_msg = (
+                f"Region mismatch: The --region parameter '{region}' does not match "
+                f"the region in the endpoint URL '{endpoint_region}'. "
+                f"Please ensure both use the same region (e.g., --region {endpoint_region})"
+            )
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+    
     # Custom retry configuration with increased attempts and timeout
     retry_config = Config(
         retries={"max_attempts": 20, "mode": "adaptive"},

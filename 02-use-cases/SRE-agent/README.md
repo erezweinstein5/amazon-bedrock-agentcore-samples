@@ -81,29 +81,57 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -e .
 
 # Configure environment variables
-cp .env.example sre_agent/.env
-# Edit sre_agent/.env and add your Anthropic API key:
+cp sre_agent/.env.example sre_agent/.env
+# Edit sre_agent/.env and add your Anthropic API key if using Anthropic directly:
 # ANTHROPIC_API_KEY=sk-ant-your-key-here
+# 
+# Note: If you are using Amazon Bedrock models for inference, you do not need to
+# make any changes to the .env file - the defaults are good to get started
 
 # Openapi Templates get replaced with your backend domain and saved as .yaml
 BACKEND_DOMAIN=api.mycompany.com ./backend/openapi_specs/generate_specs.sh
 
-# Get your EC2 instance private IP for server binding
-TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
-  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)
-PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" \
-  -s http://169.254.169.254/latest/meta-data/local-ipv4)
+# Set backend startup control variable (set to 0, false, or no to skip backend startup)
+# This is useful when backend API servers are already running elsewhere,
+# such as in workshop studio accounts or shared environments
+START_API_BACKEND=${START_API_BACKEND:-1}
 
-# Start the demo backend servers with SSL
-cd backend
-./scripts/start_demo_backend.sh \
-  --host $PRIVATE_IP  \
-  --ssl-keyfile /opt/ssl/privkey.pem \
-  --ssl-certfile /opt/ssl/fullchain.pem
-cd ..
+if [[ "$START_API_BACKEND" =~ ^(1|true|yes)$ ]]; then
+  echo "Starting backend API servers..."
+  
+  # Get your EC2 instance private IP for server binding
+  TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)
+  PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+    -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+  # Start the demo backend servers with SSL
+  cd backend
+  ./scripts/start_demo_backend.sh \
+    --host $PRIVATE_IP  \
+    --ssl-keyfile /opt/ssl/privkey.pem \
+    --ssl-certfile /opt/ssl/fullchain.pem
+  cd ..
+else
+  echo "Skipping backend API server startup (START_API_BACKEND is set to $START_API_BACKEND)"
+fi
+
+# Configure the AgentCore Gateway
+cd gateway
+cp config.yaml.example config.yaml
+# Edit config.yaml and update the parameter values
+# The file contains helpful comments for each parameter
+# Key parameters to update:
+#   - account_id: Your AWS account ID
+#   - region: Your AWS region
+#   - role_name: IAM role with BedrockAgentCoreFullAccess
+#     For testing: Can be your current EC2/notebook role (run: aws sts get-caller-identity)
+#     For production: Use a dedicated gateway role (recommended)
+#   - user_pool_id and client_id: From Cognito setup
+#   - s3_bucket: Your S3 bucket for OpenAPI schemas
+# See gateway/config.yaml for detailed parameter descriptions
 
 # Create and configure the AgentCore Gateway
-cd gateway
 ./create_gateway.sh
 ./mcp_cmds.sh
 cd ..

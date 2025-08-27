@@ -105,6 +105,7 @@ class BaseAgentNode:
 
         self.tools = tools
         self.llm_provider = llm_provider
+        self.llm_kwargs = llm_kwargs  # Store for later use in memory client creation
 
         logger.info(
             f"Initializing {self.name} with LLM provider: {llm_provider}, actor_id: {self.actor_id}, tools: {[tool.name for tool in tools]}"
@@ -176,7 +177,9 @@ class BaseAgentNode:
             user_id = state.get("user_id")
             if user_id:
                 try:
-                    memory_client = SREMemoryClient()
+                    # Get region from llm_kwargs if available
+                    region = self.llm_kwargs.get("region_name", "us-east-1") if self.llm_provider == "bedrock" else "us-east-1"
+                    memory_client = SREMemoryClient(region=region)
                     conversation_manager = create_conversation_memory_manager(
                         memory_client
                     )
@@ -374,7 +377,9 @@ class BaseAgentNode:
                     from .memory.hooks import MemoryHookProvider
 
                     # Use the SREMemoryClient that's already imported at the top
-                    memory_client = SREMemoryClient()
+                    # Get region from llm_kwargs if available
+                    region = self.llm_kwargs.get("region_name", "us-east-1") if self.llm_provider == "bedrock" else "us-east-1"
+                    memory_client = SREMemoryClient(region=region)
                     memory_hooks = MemoryHookProvider(memory_client)
 
                     # Create response object for hooks

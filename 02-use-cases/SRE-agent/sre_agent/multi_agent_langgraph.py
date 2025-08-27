@@ -318,7 +318,7 @@ def _read_gateway_config() -> tuple[str, str]:
         # Load environment variables from sre_agent directory
         load_dotenv(Path(__file__).parent / ".env")
 
-        # Read gateway URI from agent_config.yaml
+        # Read gateway URI and region from agent_config.yaml
         config_path = Path(__file__).parent / "config" / "agent_config.yaml"
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
@@ -328,13 +328,18 @@ def _read_gateway_config() -> tuple[str, str]:
             raise ValueError(
                 "Gateway URI not found in agent_config.yaml under 'gateway.uri'"
             )
+        
+        # Get AWS region with fallback logic: config -> AWS_REGION env var -> us-east-1
+        aws_region = config.get("aws", {}).get("region")
+        if not aws_region:
+            aws_region = os.environ.get("AWS_REGION", "us-east-1")
 
         # Read access token from environment
         access_token = os.getenv("GATEWAY_ACCESS_TOKEN")
         if not access_token:
             raise ValueError("GATEWAY_ACCESS_TOKEN environment variable is required")
 
-        return gateway_uri.rstrip("/"), access_token
+        return gateway_uri.rstrip("/"), access_token, aws_region
     except Exception as e:
         logger.error(f"Error reading gateway configuration: {e}")
         raise
@@ -342,7 +347,7 @@ def _read_gateway_config() -> tuple[str, str]:
 
 def create_mcp_client() -> MultiServerMCPClient:
     """Create and return MultiServerMCPClient with gateway configuration."""
-    gateway_uri, access_token = _read_gateway_config()
+    gateway_uri, access_token, _ = _read_gateway_config()  # Region not needed here
 
     # Configure MCP server connection
     client = MultiServerMCPClient(
@@ -362,6 +367,9 @@ async def create_multi_agent_system(
     provider: str = "bedrock",
     checkpointer=None,
     force_delete_memory: bool = False,
+    export_graph: bool = False,
+    graph_output_path: str = "./docs/sre_agent_architecture.md",
+    region_name: str = None,
     **llm_kwargs,
 ):
     """Create multi-agent system with MCP tools."""
@@ -370,6 +378,11 @@ async def create_multi_agent_system(
     # Get Anthropic API key if needed
     if provider == "anthropic" and not llm_kwargs.get("api_key"):
         llm_kwargs["api_key"] = _get_anthropic_api_key()
+    
+    # Add region_name to llm_kwargs for bedrock provider
+    if provider == "bedrock" and region_name:
+        llm_kwargs["region_name"] = region_name
+        logger.info(f"Using AWS region for Bedrock: {region_name}")
 
     # Create MCP client and get tools with retry logic
     mcp_tools = []
@@ -450,11 +463,14 @@ async def create_multi_agent_system(
         memory_config = _load_memory_config()
         if memory_config.enabled:
             logger.debug("Adding memory tools to agent tool list")
+            # Use the region from parameter if provided, otherwise use config default
+            memory_region = region_name if region_name else memory_config.region
             memory_client = SREMemoryClient(
                 memory_name=memory_config.memory_name,
-                region=memory_config.region,
+                region=memory_region,
                 force_delete=force_delete_memory,
             )
+            logger.info(f"Using AWS region for memory: {memory_region}")
             memory_tools = create_memory_tools(memory_client)
             logger.info(f"Added {len(memory_tools)} memory tools to agent tool list")
         else:
@@ -555,6 +571,8 @@ async def create_multi_agent_system(
         tools=all_tools,
         llm_provider=provider,
         force_delete_memory=force_delete_memory,
+        export_graph=export_graph,
+        graph_output_path=graph_output_path,
         **llm_kwargs,
     )
 
@@ -630,6 +648,7 @@ async def _run_interactive_session(
     output_dir: str = "./reports",
     save_markdown: bool = True,
     force_delete_memory: bool = False,
+    region_name: str = "us-east-1",
 ):
     """Run an interactive multi-turn conversation session."""
     # Buffer to store last query and response for /savereport command
@@ -663,7 +682,10 @@ async def _run_interactive_session(
 
     # Create multi-agent system
     graph, all_tools = await create_multi_agent_system(
-        provider, force_delete_memory=force_delete_memory
+        provider, 
+        force_delete_memory=force_delete_memory,
+        export_graph=False,  # Don't export in interactive mode each time
+        region_name=region_name,
     )
 
     # Initialize conversation state
@@ -1121,11 +1143,48 @@ async def main():
         action="store_true",
         help="Force delete and recreate the memory system (WARNING: This will delete all saved memories)",
     )
+    parser.add_argument(
+        "--export-graph",
+        action="store_true",
+        help="Export the agent architecture as a Mermaid diagram",
+    )
+    parser.add_argument(
+        "--graph-output",
+        default="./docs/sre_agent_architecture.md",
+        help="Path to save the exported Mermaid diagram (default: ./docs/sre_agent_architecture.md)",
+    )
 
     args = parser.parse_args()
 
     # Configure logging based on debug flag
     debug_enabled = configure_logging(args.debug)
+    
+    # Load AWS region with fallback logic: config -> AWS_REGION env var -> us-east-1
+    try:
+        config_path = Path(__file__).parent / "config" / "agent_config.yaml"
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        
+        # Try to get region from config first
+        aws_region = config.get("aws", {}).get("region")
+        
+        if aws_region:
+            logger.info(f"Using AWS region from agent_config.yaml: {aws_region}")
+        else:
+            # Fallback to AWS_REGION environment variable
+            aws_region = os.environ.get("AWS_REGION")
+            if aws_region:
+                logger.info(f"Using AWS region from AWS_REGION environment variable: {aws_region}")
+            else:
+                # Final fallback to us-east-1
+                aws_region = "us-east-1"
+                logger.info(f"Using default AWS region: {aws_region}")
+                
+    except Exception as e:
+        logger.warning(f"Failed to load AWS region from config: {e}")
+        # Try environment variable, then default
+        aws_region = os.environ.get("AWS_REGION", "us-east-1")
+        logger.info(f"Using AWS region fallback: {aws_region}")
 
     # Set environment variable so other modules can check debug status
     os.environ["DEBUG"] = "true" if debug_enabled else "false"
@@ -1139,18 +1198,34 @@ async def main():
 
         # Interactive mode
         if args.interactive or not args.prompt:
+            # Export graph before starting interactive session if requested
+            if args.export_graph:
+                print(f"\n📊 Exporting agent architecture to {args.graph_output}...")
+                await create_multi_agent_system(
+                    provider=args.provider,
+                    force_delete_memory=args.force_delete_memory,
+                    export_graph=True,
+                    graph_output_path=args.graph_output,
+                    region_name=aws_region,
+                )
+            
             await _run_interactive_session(
                 provider=args.provider,
                 save_state=not args.no_save,
                 output_dir=args.output_dir,
                 save_markdown=not args.no_markdown,
                 force_delete_memory=args.force_delete_memory,
+                region_name=aws_region,
             )
         # Single prompt mode
         else:
             try:
                 graph, all_tools = await create_multi_agent_system(
-                    args.provider, force_delete_memory=args.force_delete_memory
+                    args.provider, 
+                    force_delete_memory=args.force_delete_memory,
+                    export_graph=args.export_graph,
+                    graph_output_path=args.graph_output,
+                    region_name=aws_region,
                 )
                 logger.info("Multi-agent system created successfully")
             except Exception as e:
