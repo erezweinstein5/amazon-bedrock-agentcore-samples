@@ -1,0 +1,17 @@
+BROKER CARD TEMPLATE
+===================
+
+Name: [Enter broker's full name]
+
+Preferred News Feed: [Choose one: Reuters, Dow Jones, The Wall Street Journal, Financial Times, Bloomberg, CNBC]
+
+Industry Interests: [Enter specific industries/sectors of interest, e.g., "big tech, renewable energy, healthcare"]
+
+Additional Notes: [Any specific companies, regions, or market segments of particular interest]
+
+---
+EXAMPLE:
+Name: Sarah Chen
+Preferred News Feed: The Wall Street Journal
+Industry Interests: big tech, artificial intelligence, semiconductor companies
+Additional Notes: Focus on FAANG stocks and emerging AI companies

@@ -1,0 +1,4 @@
+Name: Sample Broker
+Preferred News Feed: The Wall Street Journal
+Industry Interests: technology, healthcare, financial services
+Additional Notes: Focus on large-cap stocks, emerging market trends, and regulatory impacts on major sectors.

@@ -1,3 +1,7 @@
+# Agent deployment artifacts
+.agent_arn
+.bedrock_agentcore.yaml
+
 # Python
 __pycache__/
 *.py[cod]
@@ -21,11 +25,13 @@ wheels/
 *.egg
 
 # Virtual environments
-venv/
+.env
+.venv
 env/
+venv/
 ENV/
-.venv/
-.env/
+env.bak/
+venv.bak/
 
 # IDE
 .vscode/
@@ -37,11 +43,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Logs
+*.log
 
-# AWS
-.aws/
-
-# Kiro
-.kiro/
+# Docker
+.dockerignore
