@@ -183,7 +183,7 @@ class MarketTrendsAgentDeployer:
             logger.info("   ⬆️ Pushing to ECR...")
             logger.info("   🏗️ Creating AgentCore Runtime...")
             
-            launch_result = runtime.launch(auto_update_on_conflict=True)
+            launch_result = runtime.launch()
             
             logger.info("✅ Launch completed")
             
