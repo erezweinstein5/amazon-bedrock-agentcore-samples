@@ -34,6 +34,18 @@ This use case implements an intelligent financial analysis agent using Amazon Be
 - **Dynamic Content**: Handles JavaScript-rendered pages and interactive elements
 - **Rate Limiting**: Built-in delays and retry logic for reliable data collection
 
+## Use Case Architecture
+
+![Market Trends Agent Architecture](./images/market-trends-agent-architecture.png)
+
+The Market Trends Agent leverages Amazon Bedrock AgentCore's comprehensive capabilities to deliver personalized financial intelligence:
+
+- **AgentCore Runtime**: Serverless execution environment for the LangGraph-based agent
+- **AgentCore Memory**: Multi-strategy memory system storing broker preferences and financial insights
+- **AgentCore Browser Tool**: Secure web scraping for real-time market data from financial websites
+- **Claude Sonnet 4**: Advanced LLM for financial analysis and broker interaction
+- **Multi-Source Integration**: Real-time data from Bloomberg, Reuters, WSJ, and other financial sources
+
 ## Quick Start
 
 ### Prerequisites
@@ -63,19 +75,24 @@ python test_agent.py
 
 ```
 market-trends-agent/
+├── market_trends_agent.py    # Main agent implementation (LangGraph + AgentCore)
 ├── deploy.py                 # Complete deployment script
 ├── test_agent.py             # Comprehensive test suite
 ├── test_broker_card.py       # Broker card functionality demonstration
-├── market_trends_agent.py    # Main agent implementation
-├── tools/
-│   ├── browser_tool.py       # Web scraping utilities
-│   ├── broker_card_tools.py  # Conversational broker profile tools
-│   └── __init__.py          # Tool imports
+├── tools/                    # Organized tool modules
+│   ├── __init__.py          # Tool imports and exports
+│   ├── browser_tool.py       # AgentCore Browser Tool integration
+│   ├── broker_card_tools.py  # Broker profile management tools
+│   └── memory_tools.py       # AgentCore Memory integration
+├── images/                   # Architecture diagrams and screenshots
+│   └── market-trends-agent-architecture.png
+├── docs/                     # Documentation
+│   └── DEPLOYMENT.md        # Detailed deployment guide
 ├── requirements.txt          # Python dependencies
 ├── Dockerfile               # Container configuration
 ├── broker_card.txt          # Example broker profile format
-└── docs/
-    └── DEPLOYMENT.md        # Detailed deployment guide
+├── broker_card_template.txt  # Broker card template
+└── .bedrock_agentcore.yaml  # AgentCore configuration
 ```
 
 ## Usage Examples
@@ -197,11 +214,22 @@ The comprehensive tests include:
 - **SEMANTIC**: Stores financial facts, market analysis, investment insights
 
 ### Available Tools
+
+**Market Data & News** (`tools/browser_tool.py`):
 - `get_stock_data(symbol)`: Real-time stock prices and market data
-- `search_bloomberg_news(query)`: Bloomberg news and market intelligence
+- `search_news(query, news_source)`: Multi-source news search (Bloomberg, Reuters, CNBC, WSJ, Financial Times, Dow Jones)
+
+**Broker Profile Management** (`tools/broker_card_tools.py`):
+- `parse_broker_profile_from_message()`: Parse structured broker cards
+- `generate_market_summary_for_broker()`: Tailored market analysis
+- `get_broker_card_template()`: Provide broker card format template
+- `collect_broker_preferences_interactively()`: Guide preference collection
+
+**Memory & Identity Management** (`tools/memory_tools.py`):
 - `identify_broker(message)`: LLM-based broker identity extraction
 - `get_broker_financial_profile()`: Retrieve stored financial profiles
 - `update_broker_financial_interests()`: Store new preferences and interests
+- `list_conversation_history()`: Retrieve recent conversation history
 
 ## Monitoring
 

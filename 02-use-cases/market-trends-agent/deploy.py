@@ -183,7 +183,7 @@ class MarketTrendsAgentDeployer:
             logger.info("   ⬆️ Pushing to ECR...")
             logger.info("   🏗️ Creating AgentCore Runtime...")
             
-            launch_result = runtime.launch()
+            launch_result = runtime.launch(auto_update_on_conflict=True)
             
             logger.info("✅ Launch completed")
             
@@ -246,7 +246,10 @@ def check_prerequisites():
     required_files = [
         "market_trends_agent.py",
         "requirements.txt",
-        "browser_tool.py"
+        "tools/browser_tool.py",
+        "tools/broker_card_tools.py",
+        "tools/memory_tools.py",
+        "tools/__init__.py"
     ]
     
     missing_files = []
@@ -260,14 +263,29 @@ def check_prerequisites():
     
     # Check Docker/Podman
     import subprocess
+    container_runtime = None
+    
+    # Try Docker first
     try:
         result = subprocess.run(['docker', '--version'], capture_output=True, text=True)
-        if result.returncode != 0:
-            logger.error("❌ Docker not available")
-            logger.info("💡 Make sure Docker or Podman is installed and running")
-            return False
+        if result.returncode == 0:
+            container_runtime = 'docker'
+            logger.info("✅ Docker found")
     except FileNotFoundError:
-        logger.error("❌ Docker command not found")
+        pass
+    
+    # Try Podman if Docker not found
+    if not container_runtime:
+        try:
+            result = subprocess.run(['podman', '--version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                container_runtime = 'podman'
+                logger.info("✅ Podman found")
+        except FileNotFoundError:
+            pass
+    
+    if not container_runtime:
+        logger.error("❌ Neither Docker nor Podman found")
         logger.info("💡 Make sure Docker or Podman is installed and running")
         return False
     

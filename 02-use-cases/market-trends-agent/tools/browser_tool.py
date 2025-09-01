@@ -81,14 +81,7 @@ def get_stock_data(symbol: str) -> str:
     except Exception as e:
         return f"Error getting stock data for {symbol}: {str(e)}"
 
-@tool
-def search_bloomberg_news(query: str) -> str:
-    """Search Bloomberg for business news"""
-    try:
-        with sync_playwright() as p:
-            return search_news_with_browser(p, query, "bloomberg")
-    except Exception as e:
-        return f"Error searching Bloomberg for '{query}': {str(e)}"
+
 
 @tool
 def search_news(query: str, news_source: str = "bloomberg") -> str:

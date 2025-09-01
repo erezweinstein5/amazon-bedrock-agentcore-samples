@@ -67,9 +67,9 @@ test_*.py
 deploy_*.py
 
 # Bedrock AgentCore specific - keep config but exclude runtime files
-.bedrock_agentcore.yaml
-Dockerfile
-.dockerignore
+# .bedrock_agentcore.yaml  # Keep this for deployment
+# Dockerfile  # Keep this for building
+# .dockerignore  # Keep this for build context
 
 # Keep wheelhouse for offline installations
 # wheelhouse/
