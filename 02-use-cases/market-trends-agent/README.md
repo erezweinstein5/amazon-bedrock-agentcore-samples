@@ -36,7 +36,7 @@ This use case implements an intelligent financial analysis agent using Amazon Be
 
 ## Use Case Architecture
 
-![Market Trends Agent Architecture](./images/market-trends-agent-architecture.png)
+![Market Trends Agent Architecture](images/market-trends-agent-architecture.png)
 
 The Market Trends Agent leverages Amazon Bedrock AgentCore's comprehensive capabilities to deliver personalized financial intelligence:
 
