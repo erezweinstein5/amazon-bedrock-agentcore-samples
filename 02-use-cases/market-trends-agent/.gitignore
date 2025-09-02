@@ -46,7 +46,8 @@ Thumbs.db
 # Logs
 *.log
 
-# Docker
+# Docker (auto-generated during deployment)
+Dockerfile
 .dockerignore
 
 # ASH Security Scanner
