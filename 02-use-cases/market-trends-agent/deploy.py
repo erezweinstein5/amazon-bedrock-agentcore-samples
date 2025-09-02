@@ -145,7 +145,7 @@ class MarketTrendsAgentDeployer:
         agent_name: str,
         role_name: str = "MarketTrendsAgentRole",
         entrypoint: str = "market_trends_agent.py",
-        requirements_file: str = "requirements.txt"
+        requirements_file: str = None
     ) -> str:
         """Deploy the Market Trends Agent with all requirements"""
         
@@ -157,13 +157,27 @@ class MarketTrendsAgentDeployer:
             logger.info(f"   📍 Region: {self.region}")
             logger.info(f"   🎯 Entrypoint: {entrypoint}")
             
-            # Step 1: Create execution role with all permissions
+            # Step 1: Determine dependency management approach
+            if requirements_file is None:
+                # Auto-detect: prefer uv if pyproject.toml exists, fallback to requirements.txt
+                if Path("pyproject.toml").exists():
+                    logger.info("📦 Using uv with pyproject.toml for dependency management")
+                    requirements_file = "pyproject.toml"
+                elif Path("requirements.txt").exists():
+                    logger.info("📦 Using pip with requirements.txt for dependency management")
+                    requirements_file = "requirements.txt"
+                else:
+                    raise FileNotFoundError("No pyproject.toml or requirements.txt found")
+            
+            logger.info(f"   📋 Dependencies: {requirements_file}")
+            
+            # Step 2: Create execution role with all permissions
             execution_role_arn = self.create_execution_role(role_name)
             
-            # Step 2: Initialize runtime
+            # Step 3: Initialize runtime
             runtime = Runtime()
             
-            # Step 3: Configure the runtime
+            # Step 4: Configure the runtime
             logger.info("⚙️ Configuring runtime...")
             
             runtime.configure(
@@ -230,7 +244,10 @@ class MarketTrendsAgentDeployer:
                 
         except ImportError:
             logger.error("❌ bedrock-agentcore-starter-toolkit not installed")
-            logger.info("Install with: pip install bedrock-agentcore-starter-toolkit")
+            if Path("pyproject.toml").exists():
+                logger.info("Install with: uv add bedrock-agentcore-starter-toolkit")
+            else:
+                logger.info("Install with: pip install bedrock-agentcore-starter-toolkit")
             return None
         except Exception as e:
             logger.error(f"❌ Deployment failed: {e}")
@@ -245,12 +262,24 @@ def check_prerequisites():
     # Check if required files exist
     required_files = [
         "market_trends_agent.py",
-        "requirements.txt",
         "tools/browser_tool.py",
         "tools/broker_card_tools.py",
         "tools/memory_tools.py",
         "tools/__init__.py"
     ]
+    
+    # Check for dependency files (either pyproject.toml or requirements.txt)
+    has_pyproject = Path("pyproject.toml").exists()
+    has_requirements = Path("requirements.txt").exists()
+    
+    if not has_pyproject and not has_requirements:
+        logger.error("❌ No dependency file found (pyproject.toml or requirements.txt)")
+        return False
+    
+    if has_pyproject:
+        logger.info("✅ Found pyproject.toml - will use uv for dependency management")
+    elif has_requirements:
+        logger.info("✅ Found requirements.txt - will use pip for dependency management")
     
     missing_files = []
     for file in required_files:

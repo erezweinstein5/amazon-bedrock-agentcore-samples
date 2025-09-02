@@ -56,19 +56,50 @@ The Market Trends Agent leverages Amazon Bedrock AgentCore's comprehensive capab
 
 ### Installation & Deployment
 
-1. **Install Dependencies**
+**Why uv?** 
+- ⚡ **10-100x faster** than pip for dependency resolution and installation
+- 🔒 **Deterministic builds** with automatic lock file generation
+- 🐍 **Python version management** built-in
+- 📦 **Modern dependency resolver** with better conflict resolution
+
+1. **Install uv** (if not already installed)
 ```bash
-pip install bedrock-agentcore-starter-toolkit boto3
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or via pip
+pip install uv
 ```
 
-2. **Deploy the Agent** (One Command!)
+2. **Install Dependencies**
 ```bash
-python deploy.py
+uv sync
 ```
 
-3. **Test the Agent**
+3. **Deploy the Agent** (One Command!)
 ```bash
-python test_agent.py
+# Simple deployment
+uv run python deploy.py
+
+# Custom configuration (optional)
+uv run python deploy.py \
+  --agent-name "my-market-agent" \
+  --region "us-west-2" \
+  --role-name "MyCustomRole"
+```
+
+**Available Options:**
+- `--agent-name`: Name for the agent (default: market_trends_agent)
+- `--role-name`: IAM role name (default: MarketTrendsAgentRole)
+- `--region`: AWS region (default: us-east-1)
+- `--skip-checks`: Skip prerequisite validation
+
+4. **Test the Agent**
+```bash
+uv run python test_agent.py
 ```
 
 ## Files Structure
@@ -88,8 +119,9 @@ market-trends-agent/
 │   └── market-trends-agent-architecture.png
 ├── docs/                     # Documentation
 │   └── DEPLOYMENT.md        # Detailed deployment guide
-├── requirements.txt          # Python dependencies
-├── Dockerfile               # Container configuration
+├── pyproject.toml            # uv project configuration & dependencies
+├── uv.lock                   # uv lock file (auto-generated)
+├── requirements.txt          # Python dependencies (legacy support)
 ├── broker_card.txt          # Example broker profile format
 ├── broker_card_template.txt  # Broker card template
 └── .bedrock_agentcore.yaml  # AgentCore configuration
@@ -135,7 +167,7 @@ The agent will provide analysis specifically tailored to:
 
 ### 🧪 Test the Broker Card Functionality
 ```bash
-python test_broker_card.py
+uv run python test_broker_card.py
 ```
 
 This demonstrates the complete workflow:
@@ -143,47 +175,25 @@ This demonstrates the complete workflow:
 2. Agent parsing and storing preferences
 3. Receiving personalized market analysis
 
-## Deployment Options
+### 💬 Continue Interactive Conversations
+After testing, continue chatting with your agent:
 
-### Simple Deployment
+**Quick one-liner for immediate chat:**
 ```bash
-# Deploy with defaults
-python deploy.py
+uv run python -c "
+import boto3, json
+client = boto3.client('bedrock-agentcore', region_name='us-east-1')
+with open('.agent_arn', 'r') as f: arn = f.read().strip()
+print('💬 Market Trends Agent Chat (type \"quit\" to exit)')
+while True:
+    try:
+        msg = input('\n🤖 You: ')
+        if msg.lower() in ['quit', 'exit']: break
+        resp = client.invoke_agent_runtime(agentRuntimeArn=arn, payload=json.dumps({'prompt': msg}))
+        print('📈 Agent:', resp['response'].read().decode('utf-8'))
+    except KeyboardInterrupt: break
+"
 ```
-
-### Custom Configuration
-```bash
-# Deploy with custom settings
-python deploy.py \
-  --agent-name "my-market-agent" \
-  --region "us-west-2" \
-  --role-name "MyCustomRole"
-```
-
-### Available Options
-- `--agent-name`: Name for the agent (default: market_trends_agent)
-- `--role-name`: IAM role name (default: MarketTrendsAgentRole)
-- `--region`: AWS region (default: us-east-1)
-- `--skip-checks`: Skip prerequisite validation
-
-## Testing
-
-### Test Options
-```bash
-# Simple connectivity test
-python test_agent.py
-# Choose option 1
-
-# Comprehensive functionality tests
-python test_agent.py
-# Choose option 2
-```
-
-The comprehensive tests include:
-- Broker profile creation and memory storage
-- Memory recall across sessions
-- Real-time market data retrieval
-- Bloomberg news searches
 
 ## Architecture
 
