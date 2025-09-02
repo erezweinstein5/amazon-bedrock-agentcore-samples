@@ -8,7 +8,6 @@ conversation history, and financial interests using AgentCore Memory.
 from langchain_core.tools import tool
 from bedrock_agentcore.memory import MemoryClient
 from botocore.exceptions import ClientError
-from datetime import datetime
 import hashlib
 import logging
 import os
@@ -195,7 +194,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                     logger.info(f"No memories found in {strategy_type} strategy: {strategy_error}")
             
             if all_profile_info:
-                return f"Broker Financial Profile:\n" + "\n\n".join(all_profile_info)
+                return "Broker Financial Profile:\n" + "\n\n".join(all_profile_info)
             else:
                 # Fallback: Get recent events to build profile from conversation history
                 events = memory_client.list_events(
@@ -217,7 +216,7 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                                         profile_elements.append(content[:200] + "..." if len(content) > 200 else content)
                     
                     if profile_elements:
-                        return f"Broker Profile (from conversation history):\n" + "\n\n".join(profile_elements[-2:])
+                        return "Broker Profile (from conversation history):\n" + "\n\n".join(profile_elements[-2:])
                     else:
                         return "Building financial profile from our conversations. Profile will be enhanced as we continue our discussions."
                 else:

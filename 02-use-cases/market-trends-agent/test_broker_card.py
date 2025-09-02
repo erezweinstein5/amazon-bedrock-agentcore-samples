@@ -10,7 +10,6 @@ This demonstrates the correct way users should interact with the Market Trends A
 
 import boto3
 import json
-import os
 from botocore.config import Config
 
 def test_broker_card_conversation():
@@ -79,7 +78,7 @@ Recent Interests: blockchain technology, NFTs, metaverse"""
                                   if indicator in result2.lower()]
                 
                 if found_indicators:
-                    print(f"\n🎯 SUCCESS: Response is personalized!")
+                    print("\n🎯 SUCCESS: Response is personalized!")
                     print(f"   Found personalization indicators: {', '.join(found_indicators)}")
                 else:
                     print("\n⚠️  WARNING: Response may not be fully personalized")

@@ -1,18 +1,11 @@
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from bedrock_agentcore.memory import MemoryClient
 from tools import get_stock_data, search_news
 from tools import parse_broker_profile_from_message, generate_market_summary_for_broker, get_broker_card_template, collect_broker_preferences_interactively
 from tools import create_memory, extract_actor_id, create_memory_tools
-from botocore.exceptions import ClientError
-from datetime import datetime
-import argparse
-import json
 import logging
-import os
 
 app = BedrockAgentCoreApp()
 

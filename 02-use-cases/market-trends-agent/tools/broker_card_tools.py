@@ -1,7 +1,6 @@
 from langchain_core.tools import tool
 from langchain_aws import ChatBedrock
-from typing import Dict, Any
-import re
+from typing import Dict
 
 def parse_broker_card_format(card_content: str) -> Dict[str, str]:
     """Parse broker card format from user input into structured data"""

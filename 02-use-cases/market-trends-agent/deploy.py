@@ -126,7 +126,7 @@ class MarketTrendsAgentDeployer:
             logger.info(f"📋 IAM role {role_name} already exists, using existing role")
             
             # Update the existing role with comprehensive permissions
-            logger.info(f"📋 Updating existing role with comprehensive permissions...")
+            logger.info("📋 Updating existing role with comprehensive permissions...")
             self.iam_client.put_role_policy(
                 RoleName=role_name,
                 PolicyName="MarketTrendsAgentComprehensivePolicy",
@@ -166,7 +166,7 @@ class MarketTrendsAgentDeployer:
             # Step 3: Configure the runtime
             logger.info("⚙️ Configuring runtime...")
             
-            config_response = runtime.configure(
+            runtime.configure(
                 execution_role=execution_role_arn,
                 entrypoint=entrypoint,
                 requirements_file=requirements_file,
@@ -183,7 +183,7 @@ class MarketTrendsAgentDeployer:
             logger.info("   ⬆️ Pushing to ECR...")
             logger.info("   🏗️ Creating AgentCore Runtime...")
             
-            launch_result = runtime.launch()
+            runtime.launch()
             
             logger.info("✅ Launch completed")
             
@@ -213,7 +213,7 @@ class MarketTrendsAgentDeployer:
                 # Show CloudWatch logs info
                 agent_id = runtime_arn.split('/')[-1]
                 log_group = f"/aws/bedrock-agentcore/runtimes/{agent_id}-DEFAULT"
-                logger.info(f"\n📊 Monitoring:")
+                logger.info("\n📊 Monitoring:")
                 logger.info(f"   CloudWatch Logs: {log_group}")
                 logger.info(f"   Tail logs: aws logs tail {log_group} --follow")
                 
