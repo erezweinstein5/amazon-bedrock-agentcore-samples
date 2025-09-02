@@ -125,7 +125,7 @@ def extract_actor_id(user_message: str) -> str:
                 return f"broker_{clean_name}"
     
     # Fallback: use message hash for anonymous users
-    message_hash = hashlib.md5(user_message.lower().encode()).hexdigest()[:8]
+    message_hash = hashlib.sha256(user_message.lower().encode()).hexdigest()[:8]
     return f"user_{message_hash}"
 
 def get_namespaces(mem_client: MemoryClient, memory_id: str) -> dict:
