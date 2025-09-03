@@ -62,7 +62,6 @@ def create_memory():
     """Create or retrieve existing AgentCore Memory for the market trends agent with multiple memory strategies"""
     from bedrock_agentcore.memory.constants import StrategyType
     import boto3
-    import json
     
     region = os.getenv('AWS_REGION', 'us-east-1')
     memory_name = "MarketTrendsAgentMultiStrategy"
@@ -70,7 +69,7 @@ def create_memory():
     
     # Use SSM Parameter Store for distributed coordination
     ssm_client = boto3.client('ssm', region_name=region)
-    param_name = f"/bedrock-agentcore/market-trends-agent/memory-id"
+    param_name = "/bedrock-agentcore/market-trends-agent/memory-id"
     
     # Check SSM Parameter Store for existing memory ID (distributed coordination)
     try:
@@ -89,8 +88,8 @@ def create_memory():
         logger.warning(f"Memory ID {saved_memory_id} from SSM is not active, removing parameter")
         try:
             ssm_client.delete_parameter(Name=param_name)
-        except:
-            pass
+        except Exception as delete_error:
+            logger.warning(f"Could not delete SSM parameter: {delete_error}")
             
     except ssm_client.exceptions.ParameterNotFound:
         logger.info("No memory ID found in SSM Parameter Store")
@@ -532,7 +531,8 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                         if memories:
                             found_existing_profile = True
                             break
-                    except:
+                    except Exception as memory_error:
+                        logger.debug(f"No memories found in {strategy_type}: {memory_error}")
                         continue
                 
                 if found_existing_profile:

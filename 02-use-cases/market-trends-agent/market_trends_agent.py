@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from tools import get_stock_data, search_news
 from tools import parse_broker_profile_from_message, generate_market_summary_for_broker, get_broker_card_template, collect_broker_preferences_interactively
-from tools import create_memory, extract_actor_id, create_memory_tools
+from tools import create_memory, create_memory_tools
 from datetime import datetime
 import logging
 

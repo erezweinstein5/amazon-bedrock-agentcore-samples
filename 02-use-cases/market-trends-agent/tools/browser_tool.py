@@ -1,8 +1,11 @@
 import time
+import logging
 from playwright.sync_api import sync_playwright, Playwright, BrowserType
 from bedrock_agentcore.tools.browser_client import browser_session
 from langchain_core.tools import tool
 from langchain_aws import ChatBedrock
+
+logger = logging.getLogger(__name__)
 
 def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
     """Get stock data using browser"""
@@ -21,7 +24,7 @@ def get_stock_data_with_browser(playwright: Playwright, symbol: str) -> str:
             
             # Use LLM to extract stock data
             llm = ChatBedrock(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0", region_name="us-east-1")
-            prompt = f"Extract stock price and key information for {symbol} from this page content. Be concise:\n\n{content[:3000]}"
+            prompt = "Extract stock price and key information for {} from this page content. Be concise:\n\n{}".format(symbol, content[:3000])
             result = llm.invoke(prompt).content
             return result
                 
@@ -58,8 +61,8 @@ def search_news_with_browser(playwright: Playwright, query: str, news_source: st
                 "ft": f"https://www.ft.com/search?q={encoded_query}",
                 "dow jones": f"https://www.dowjones.com/search/?q={encoded_query}",
                 # Add more reliable sources
-                "yahoo finance": f"https://finance.yahoo.com/news/",
-                "yahoo": f"https://finance.yahoo.com/news/",
+                "yahoo finance": "https://finance.yahoo.com/news/",
+                "yahoo": "https://finance.yahoo.com/news/",
                 "marketwatch": f"https://www.marketwatch.com/search?q={encoded_query}",
                 "seeking alpha": f"https://seekingalpha.com/search?q={encoded_query}"
             }
@@ -187,7 +190,8 @@ def search_news(query: str, news_source: str = "bloomberg") -> str:
                         try:
                             print(f"Fallback: Trying {fallback_source} instead of {news_source}")
                             return search_news_with_browser(p, query, fallback_source)
-                        except:
+                        except Exception as fallback_error:
+                            logger.warning(f"Fallback source {fallback_source} failed: {fallback_error}")
                             continue
             
             return result
@@ -201,7 +205,8 @@ def search_news(query: str, news_source: str = "bloomberg") -> str:
                     print(f"Error with {news_source}, trying {fallback_source} as fallback")
                     with sync_playwright() as p:
                         return search_news_with_browser(p, query, fallback_source)
-                except:
+                except Exception as final_fallback_error:
+                    logger.warning(f"Final fallback source {fallback_source} failed: {final_fallback_error}")
                     continue
         
         return f"Error searching {news_source} for '{query}': {str(e)}. Multiple fallback sources also failed. This may be due to temporary server issues or rate limiting. Try again in a few minutes or use a different query."

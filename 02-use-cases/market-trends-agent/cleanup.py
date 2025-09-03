@@ -12,10 +12,8 @@ Removes all resources created by deploy.py including:
 """
 
 import argparse
-import json
 import logging
 import boto3
-import time
 from pathlib import Path
 
 # Configure logging
