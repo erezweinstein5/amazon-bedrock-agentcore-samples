@@ -91,12 +91,17 @@ def create_market_trends_agent():
     
     BROKER PROFILE MANAGEMENT WORKFLOW:
     
-    **CRITICAL: ALWAYS START WITH BROKER IDENTIFICATION**
+    **CRITICAL: MANDATORY BROKER IDENTIFICATION FIRST**
     
-    1. **First Step - Identify Broker**: 
-       - ALWAYS use identify_broker(user_message) when a user provides any profile information or introduces themselves
+    1. **MANDATORY First Step - Identify Broker**: 
+       - IMMEDIATELY use identify_broker(user_message) when ANY user message contains:
+         * Names, introductions, or "I'm [name]" 
+         * Broker cards or profile information
+         * Company names or roles
+         * ANY identity information whatsoever
        - This returns the correct actor_id and checks for existing profiles
        - Use the returned actor_id for ALL subsequent memory operations
+       - DO NOT proceed with any other actions until broker identification is complete
     
     2. **Check Existing Profile**:
        - After identification, use get_broker_financial_profile(actor_id) with the identified actor_id
@@ -104,7 +109,10 @@ def create_market_trends_agent():
        - If no profile exists, proceed to collect new profile information
     
     3. **Profile Collection**:
-       - For structured broker cards: use parse_broker_profile_from_message()
+       - **For broker cards (Name: X, Company: Y, etc.)**: 
+         * FIRST: identify_broker(user_message) to get actor_id
+         * THEN: parse_broker_profile_from_message() to extract structured data
+         * FINALLY: update_broker_financial_interests(parsed_profile, actor_id) to store
        - For missing info: use collect_broker_preferences_interactively()
        - For template: use get_broker_card_template()
        - ALWAYS store collected info with update_broker_financial_interests(info, actor_id)
@@ -127,6 +135,16 @@ def create_market_trends_agent():
        - Provide recommendations aligned with their stored investment style and preferences
        - Maintain professional relationships through consistent, personalized service
     
+    **IMMEDIATE ACTION REQUIRED FOR EVERY MESSAGE:**
+    Before doing ANYTHING else, check if the user message contains:
+    - Names (Name: X, I'm X, My name is X)
+    - Broker cards or profile information
+    - Company/role information
+    - Any identity markers
+    
+    If YES: IMMEDIATELY call identify_broker(user_message) as your FIRST action
+    If NO: Proceed with normal market analysis
+    
     CRITICAL: Always use the memory tools to maintain and reference broker financial profiles. This is essential for providing personalized, professional market intelligence services."""
     
     # Define the chatbot node with automatic conversation saving
@@ -136,8 +154,49 @@ def create_market_trends_agent():
         # Remove any existing system messages to avoid duplicates
         non_system_messages = [msg for msg in raw_messages if not isinstance(msg, SystemMessage)]
         
+        # Filter messages more carefully to preserve tool_use/tool_result pairs
+        filtered_messages = []
+        i = 0
+        while i < len(non_system_messages):
+            msg = non_system_messages[i]
+            
+            # Check if message has content (for regular messages)
+            if hasattr(msg, 'content') and isinstance(msg.content, str) and msg.content.strip():
+                filtered_messages.append(msg)
+            # Check if message has tool_calls (for tool_use messages)
+            elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                filtered_messages.append(msg)
+            # Check if message has tool_call_id (for tool_result messages)
+            elif hasattr(msg, 'tool_call_id') and msg.tool_call_id:
+                filtered_messages.append(msg)
+            # Check for content list with tool blocks
+            elif hasattr(msg, 'content') and isinstance(msg.content, list):
+                # Keep messages with tool content blocks
+                has_tool_content = any(
+                    isinstance(block, dict) and block.get('type') in ['tool_use', 'tool_result']
+                    for block in msg.content
+                )
+                if has_tool_content:
+                    filtered_messages.append(msg)
+                else:
+                    # Check if any text blocks have content
+                    has_text_content = any(
+                        isinstance(block, dict) and 
+                        block.get('type') == 'text' and 
+                        block.get('text', '').strip()
+                        for block in msg.content
+                    )
+                    if has_text_content:
+                        filtered_messages.append(msg)
+                    else:
+                        logger.warning(f"Filtered out empty message: {type(msg).__name__}")
+            else:
+                logger.warning(f"Filtered out empty message: {type(msg).__name__}")
+            
+            i += 1
+        
         # Always ensure SystemMessage is first
-        messages = [SystemMessage(content=system_message)] + non_system_messages
+        messages = [SystemMessage(content=system_message)] + filtered_messages
         
         # Get response from model with tools bound
         response = llm_with_tools.invoke(messages)

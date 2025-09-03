@@ -57,10 +57,10 @@ Recent Interests: blockchain technology, NFTs, metaverse"""
             
             # Test 2: Ask for market analysis - Should be personalized based on stored profile
             print("🧪 Testing Personalized Market Analysis...")
-            print("📋 Follow-up question: 'What's the latest news on cryptocurrency and fintech stocks?'")
+            print("📋 Follow-up question: 'It's Maria Rodriguez, What's the latest news on cryptocurrency and fintech stocks?'")
             print("\n" + "=" * 50)
             
-            analysis_prompt = "What's the latest news on cryptocurrency and fintech stocks?"
+            analysis_prompt = "It's Maria Rodriguez, What's the latest news on cryptocurrency and fintech stocks?"
             
             response2 = client.invoke_agent_runtime(
                 agentRuntimeArn=runtime_arn,

@@ -91,7 +91,7 @@ def run_comprehensive_tests(runtime_arn: str):
     print("📋 TEST 2: Memory Recall")
     print("-" * 30)
     
-    memory_test = "What do you remember about my investment preferences?"
+    memory_test = "Hi, I'm Sarah Chen from Morgan Stanley. What do you remember about my investment preferences?"
     response2 = invoke_agent(runtime_arn, memory_test)
     print("✅ Response:", response2[:200] + "..." if len(response2) > 200 else response2)
     

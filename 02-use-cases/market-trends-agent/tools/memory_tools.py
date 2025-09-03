@@ -16,33 +16,110 @@ import re
 # Configure logging
 logger = logging.getLogger(__name__)
 
+def cleanup_duplicate_memories():
+    """Clean up duplicate memory instances, keeping only the most recent ACTIVE one"""
+    region = os.getenv('AWS_REGION', 'us-east-1')
+    client = MemoryClient(region_name=region)
+    memory_name = "MarketTrendsAgentMultiStrategy"
+    
+    try:
+        memories = client.list_memories()
+        market_memories = [m for m in memories if m.get('id', '').startswith(memory_name + '-')]
+        
+        if len(market_memories) <= 1:
+            print(f"Found {len(market_memories)} memory instances - no cleanup needed")
+            return
+        
+        print(f"Found {len(market_memories)} memory instances - cleaning up duplicates...")
+        
+        # Sort by creation time (if available) or just use the first active one
+        active_memories = [m for m in market_memories if m.get('status') == 'ACTIVE']
+        
+        if active_memories:
+            # Keep the first active one, delete the rest
+            keep_memory = active_memories[0]
+            delete_memories = active_memories[1:] + [m for m in market_memories if m.get('status') != 'ACTIVE']
+            
+            print(f"Keeping memory: {keep_memory['id']}")
+            
+            # Save the kept memory ID to file
+            with open('.memory_id', 'w') as f:
+                f.write(keep_memory['id'])
+            
+            for memory in delete_memories:
+                try:
+                    print(f"Deleting duplicate memory: {memory['id']}")
+                    client.delete_memory(memory['id'])
+                except Exception as e:
+                    print(f"Error deleting memory {memory['id']}: {e}")
+        
+        print("Memory cleanup completed")
+        
+    except Exception as e:
+        print(f"Error during memory cleanup: {e}")
+
 def create_memory():
     """Create or retrieve existing AgentCore Memory for the market trends agent with multiple memory strategies"""
     from bedrock_agentcore.memory.constants import StrategyType
     
     region = os.getenv('AWS_REGION', 'us-east-1')
-    client = MemoryClient(region_name=region)
     memory_name = "MarketTrendsAgentMultiStrategy"
+    client = MemoryClient(region_name=region)
     
-    # First, check if memory already exists
+    # Check if we have a saved memory ID file first
+    memory_id_file = '.memory_id'
+    if os.path.exists(memory_id_file):
+        try:
+            with open(memory_id_file, 'r') as f:
+                saved_memory_id = f.read().strip()
+            
+            # Verify this memory still exists and is active
+            memories = client.list_memories()
+            for memory in memories:
+                if (memory.get('id') == saved_memory_id and 
+                    memory.get('status') == 'ACTIVE'):
+                    logger.info(f"Using saved memory ID: {saved_memory_id}")
+                    return client, saved_memory_id
+            
+            # Saved memory doesn't exist or isn't active, remove the file
+            logger.warning(f"Saved memory ID {saved_memory_id} is not active, removing file")
+            os.remove(memory_id_file)
+            
+        except Exception as e:
+            logger.warning(f"Error reading saved memory ID: {e}")
+            if os.path.exists(memory_id_file):
+                os.remove(memory_id_file)
+    
+    # Check if any memory already exists - get the FIRST active one
     logger.info(f"Checking if memory '{memory_name}' already exists...")
     try:
         memories = client.list_memories()
-        memory_id = None
+        active_memories = []
         for memory in memories:
-            # Memory IDs start with the memory name followed by a dash and random string
-            if memory.get('id', '').startswith(memory_name + '-'):
-                memory_id = memory['id']
-                break
+            if (memory.get('id', '').startswith(memory_name + '-') and 
+                memory.get('status') == 'ACTIVE'):
+                active_memories.append(memory)
         
-        if memory_id:
-            logger.info(f"Found existing memory '{memory_name}' with ID: {memory_id}")
+        if active_memories:
+            # Use the first active memory and save its ID
+            memory_id = active_memories[0]['id']
+            logger.info(f"Found existing ACTIVE memory '{memory_name}' with ID: {memory_id}")
+            
+            # Save the memory ID to file for future use
+            with open(memory_id_file, 'w') as f:
+                f.write(memory_id)
+            
+            # If there are multiple active memories, log a warning
+            if len(active_memories) > 1:
+                logger.warning(f"Found {len(active_memories)} active memories - using first one: {memory_id}")
+            
             return client, memory_id
+            
     except Exception as e:
         logger.warning(f"Error checking existing memories: {e}")
     
     # Memory doesn't exist, create it
-    logger.info("Memory not found, creating new AgentCore Memory with multiple memory strategies...")
+    logger.info("Creating new AgentCore Memory with multiple memory strategies...")
     try:
         # Define memory strategies for market trends agent
         strategies = [
@@ -72,6 +149,11 @@ def create_memory():
         )
         memory_id = memory['id']
         logger.info(f"Multi-strategy memory created successfully with ID: {memory_id}")
+        
+        # Save the memory ID to file for future use
+        with open(memory_id_file, 'w') as f:
+            f.write(memory_id)
+        
         return client, memory_id
         
     except ClientError as e:
@@ -81,16 +163,20 @@ def create_memory():
             memories = client.list_memories()
             memory_id = None
             for memory in memories:
-                if memory.get('id', '').startswith(memory_name + '-'):
+                if (memory.get('id', '').startswith(memory_name + '-') and 
+                    memory.get('status') == 'ACTIVE'):
                     memory_id = memory['id']
                     break
             
             if memory_id:
                 logger.info(f"Found existing memory '{memory_name}' with ID: {memory_id}")
+                # Save the memory ID to file for future use
+                with open(memory_id_file, 'w') as f:
+                    f.write(memory_id)
                 return client, memory_id
             else:
-                logger.error(f"Memory '{memory_name}' exists but could not retrieve ID")
-                raise Exception(f"Could not find existing memory '{memory_name}'")
+                logger.error(f"Memory '{memory_name}' exists but could not retrieve ACTIVE ID")
+                raise Exception(f"Could not find ACTIVE memory '{memory_name}'")
         else:
             logger.error(f"Error creating memory: {e}")
             raise
@@ -153,7 +239,25 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
                 session_id=session_id,
                 max_results=10
             )
-            return events
+            
+            if events:
+                # Convert events to readable format
+                history_parts = []
+                for i, event in enumerate(events[-5:], 1):  # Show last 5 events
+                    if 'messages' in event:
+                        for message in event['messages']:
+                            content = message.get('content', '').strip()
+                            role = message.get('role', 'unknown')
+                            if content:
+                                history_parts.append(f"{role.upper()}: {content[:100]}...")
+                
+                if history_parts:
+                    return "Recent conversation history:\n" + "\n".join(history_parts)
+                else:
+                    return "No meaningful conversation history found"
+            else:
+                return "No conversation history available"
+                
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}")
             return "No conversation history available"
