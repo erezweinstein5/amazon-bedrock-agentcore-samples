@@ -89,29 +89,31 @@ def create_market_trends_agent():
     - LLM-based identity extraction ensures consistent broker identification across varied introductions
     - Memory strategies work together to provide rich, contextual financial intelligence
     
-    BROKER PROFILE MANAGEMENT:
+    BROKER PROFILE MANAGEMENT WORKFLOW:
     
-    1. **Broker Identification**: 
-       - Use identify_broker() when a user introduces themselves to get their consistent actor_id
-       - The LLM will extract name, company, and role information intelligently
-       - This ensures the same broker gets the same identity across all sessions
+    **CRITICAL: ALWAYS START WITH BROKER IDENTIFICATION**
     
-    2. **Profile Collection (Conversational Approach)**:
-       - Use parse_broker_profile_from_message() when users provide structured broker card format
-       - Use get_broker_card_template() to show users the expected format
-       - Use collect_broker_preferences_interactively() to guide collection of specific preferences
-       - NO FILE ACCESS - All profile data comes through conversation
+    1. **First Step - Identify Broker**: 
+       - ALWAYS use identify_broker(user_message) when a user provides any profile information or introduces themselves
+       - This returns the correct actor_id and checks for existing profiles
+       - Use the returned actor_id for ALL subsequent memory operations
     
-    3. **New Brokers**: 
-       - When a broker introduces themselves, use identify_broker() first
-       - If they provide broker card format, use parse_broker_profile_from_message() to extract structured data
-       - Use update_broker_financial_interests() to store their complete profile
-       - If missing information, use collect_broker_preferences_interactively() to ask targeted questions
+    2. **Check Existing Profile**:
+       - After identification, use get_broker_financial_profile(actor_id) with the identified actor_id
+       - If profile exists, acknowledge their stored preferences and personalize responses
+       - If no profile exists, proceed to collect new profile information
     
-    4. **Returning Brokers**:
-       - Use identify_broker() to confirm their identity, then get_broker_financial_profile() to recall their stored interests
-       - Reference their previous preferences and tailor analysis accordingly
-       - Update their profile with any new interests or changes using update_broker_financial_interests()
+    3. **Profile Collection**:
+       - For structured broker cards: use parse_broker_profile_from_message()
+       - For missing info: use collect_broker_preferences_interactively()
+       - For template: use get_broker_card_template()
+       - ALWAYS store collected info with update_broker_financial_interests(info, actor_id)
+    
+    4. **Memory Operations**:
+       - ALWAYS pass the identified actor_id to memory functions
+       - get_broker_financial_profile(actor_id_from_identify_broker)
+       - update_broker_financial_interests(info, actor_id_from_identify_broker)
+       - This ensures consistent broker identity across all sessions
     
     3. **Market Analysis**:
        - Provide real-time stock data using get_stock_data()
@@ -137,19 +139,15 @@ def create_market_trends_agent():
         # Always ensure SystemMessage is first
         messages = [SystemMessage(content=system_message)] + non_system_messages
         
-        # Get the latest user message
-        latest_user_message = next((msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage)), None)
-        
-        # Extract actor_id from user message for consistent broker identification
-        current_actor_id = default_actor_id
-        if latest_user_message:
-            current_actor_id = extract_actor_id(latest_user_message)
-        
         # Get response from model with tools bound
         response = llm_with_tools.invoke(messages)
         
-        # Save conversation to AgentCore Memory with correct actor_id
+        # Save conversation to AgentCore Memory - let the agent handle actor_id through tools
+        # The agent will use identify_broker() tool to get the correct actor_id when needed
+        latest_user_message = next((msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage)), None)
+        
         if latest_user_message and response.content.strip():
+            # Use default actor_id for conversation saving - the agent tools will handle proper identification
             conversation = [
                 (latest_user_message, "USER"),
                 (response.content, "ASSISTANT")
@@ -158,13 +156,15 @@ def create_market_trends_agent():
             # Validate that all message texts are non-empty
             if all(msg[0].strip() for msg in conversation):
                 try:
+                    # Use session-based actor_id for general conversation, tools will handle broker-specific memory
+                    session_actor_id = f"session_{session_id}"
                     memory_client.create_event(
                         memory_id=memory_id,
-                        actor_id=current_actor_id,
+                        actor_id=session_actor_id,
                         session_id=session_id,
                         messages=conversation
                     )
-                    logger.info(f"Conversation saved to AgentCore Memory for actor: {current_actor_id}")
+                    logger.info(f"Conversation saved to AgentCore Memory for session: {session_id}")
                 except Exception as e:
                     logger.error(f"Error saving conversation to memory: {e}")
         

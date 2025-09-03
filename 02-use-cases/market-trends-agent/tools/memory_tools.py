@@ -160,10 +160,17 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
 
     @tool
     def get_broker_financial_profile(actor_id_override: str = None):
-        """Retrieve the long-term financial interests and investment profile from multiple memory strategies"""
+        """Retrieve the long-term financial interests and investment profile from multiple memory strategies
+        
+        Args:
+            actor_id_override: Specific actor_id to retrieve profile for (use the actor_id from identify_broker())
+        """
         try:
             # Use provided actor_id or default
             current_actor_id = actor_id_override or default_actor_id
+            
+            if not actor_id_override:
+                return "No actor_id provided. Please use identify_broker() first to get the correct actor_id, then call this function with that actor_id."
             
             # Get namespaces for all memory strategies
             namespaces_dict = get_namespaces(memory_client, memory_id)
@@ -232,11 +239,14 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
         
         Args:
             interests_update: New financial interests, preferences, or profile updates to store
-            actor_id_override: Optional specific actor_id to use
+            actor_id_override: Specific actor_id to store profile for (use the actor_id from identify_broker())
         """
         try:
             # Use provided actor_id or default
             current_actor_id = actor_id_override or default_actor_id
+            
+            if not actor_id_override:
+                return "No actor_id provided. Please use identify_broker() first to get the correct actor_id, then call this function with that actor_id."
             
             # Create an event with proper roles for memory storage
             conversation = [
@@ -265,32 +275,44 @@ def create_memory_tools(memory_client: MemoryClient, memory_id: str, session_id:
             user_message: The user's message containing identity information (broker card format or introduction)
             
         Returns:
-            Information about the identified broker and their actor_id
+            Information about the identified broker and their actor_id for use in other memory functions
         """
         try:
             # Extract actor_id using simple parsing
             identified_actor_id = extract_actor_id(user_message)
             
-            # Try to get existing profile for this broker
+            # Try to get existing profile for this broker across all sessions
             try:
-                events = memory_client.list_events(
-                    memory_id=memory_id,
-                    actor_id=identified_actor_id,
-                    session_id=session_id,
-                    max_results=5
-                )
+                # Check all namespaces for existing profile data
+                namespaces_dict = get_namespaces(memory_client, memory_id)
+                found_existing_profile = False
                 
-                if events:
-                    return f"Broker identified: {identified_actor_id}\nFound existing profile with {len(events)} previous interactions.\nUse get_broker_financial_profile() to retrieve their stored preferences."
+                for strategy_type, namespace_template in namespaces_dict.items():
+                    try:
+                        namespace = namespace_template.format(actorId=identified_actor_id)
+                        memories = memory_client.retrieve_memories(
+                            memory_id=memory_id,
+                            namespace=namespace,
+                            query="broker profile investment preferences",
+                            top_k=1
+                        )
+                        if memories:
+                            found_existing_profile = True
+                            break
+                    except:
+                        continue
+                
+                if found_existing_profile:
+                    return f"ACTOR_ID: {identified_actor_id}\nSTATUS: Existing broker found\nACTION: Use get_broker_financial_profile('{identified_actor_id}') to retrieve their stored preferences."
                 else:
-                    return f"New broker identified: {identified_actor_id}\nNo previous profile found. This appears to be a new broker.\nUse update_broker_financial_interests() to store their preferences."
+                    return f"ACTOR_ID: {identified_actor_id}\nSTATUS: New broker\nACTION: Use update_broker_financial_interests(profile_info, '{identified_actor_id}') to store their preferences."
                     
             except Exception as e:
-                return f"Broker identified: {identified_actor_id}\nUnable to check existing profile: {e}"
+                return f"ACTOR_ID: {identified_actor_id}\nSTATUS: Unable to check existing profile\nERROR: {e}\nACTION: Proceed as new broker and use update_broker_financial_interests(profile_info, '{identified_actor_id}')"
                 
         except Exception as e:
             logger.error(f"Error identifying broker: {e}")
-            return "Unable to identify broker at this time"
+            return f"ERROR: Unable to identify broker - {e}"
     
     return [
         list_conversation_history,

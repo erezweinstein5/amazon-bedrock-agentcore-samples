@@ -133,16 +133,16 @@ market-trends-agent/
 Send your broker information in this structured format:
 
 ```
-Name: Sarah Chen
-Company: Morgan Stanley
+Name: Yuval Bing
+Company: HSBC
 Role: Investment Advisor
-Preferred News Feed: Bloomberg
-Industry Interests: technology, healthcare, financial services
-Investment Strategy: growth investing
-Risk Tolerance: moderate to high
+Preferred News Feed: BBC
+Industry Interests: oil, emerging markets
+Investment Strategy: dividend
+Risk Tolerance: low
 Client Demographics: younger professionals, tech workers
 Geographic Focus: North America, Asia-Pacific
-Recent Interests: artificial intelligence, renewable energy, fintech
+Recent Interests: middle east geopolitics
 ```
 
 The agent will automatically:
