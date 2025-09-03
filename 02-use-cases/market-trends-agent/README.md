@@ -4,10 +4,14 @@
 
 This use case implements an intelligent financial analysis agent using Amazon Bedrock AgentCore that provides real-time market intelligence, stock analysis, and personalized investment recommendations. The agent combines LLM-powered analysis with live market data and maintains persistent memory of broker preferences across sessions.
 
+## Use Case Architecture
+
+![Market Trends Agent Architecture](images/market-trends-agent-architecture.png)
+
 | Information | Details |
 |-------------|---------|
 | Use case type | Conversational |
-| Agent type | Single agent |
+| Agent type | Graph |
 | Use case components | Memory, Tools, Browser Automation |
 | Use case vertical | Financial Services |
 | Example complexity | Advanced |
@@ -34,9 +38,7 @@ This use case implements an intelligent financial analysis agent using Amazon Be
 - **Dynamic Content**: Handles JavaScript-rendered pages and interactive elements
 - **Rate Limiting**: Built-in delays and retry logic for reliable data collection
 
-## Use Case Architecture
 
-![Market Trends Agent Architecture](images/market-trends-agent-architecture.png)
 
 The Market Trends Agent leverages Amazon Bedrock AgentCore's comprehensive capabilities to deliver personalized financial intelligence:
 
@@ -55,12 +57,6 @@ The Market Trends Agent leverages Amazon Bedrock AgentCore's comprehensive capab
 - Access to Amazon Bedrock AgentCore
 
 ### Installation & Deployment
-
-**Why uv?** 
-- ⚡ **10-100x faster** than pip for dependency resolution and installation
-- 🔒 **Deterministic builds** with automatic lock file generation
-- 🐍 **Python version management** built-in
-- 📦 **Modern dependency resolver** with better conflict resolution
 
 1. **Install uv** (if not already installed)
 ```bash
@@ -100,31 +96,6 @@ uv run python deploy.py \
 4. **Test the Agent**
 ```bash
 uv run python test_agent.py
-```
-
-## Files Structure
-
-```
-market-trends-agent/
-├── market_trends_agent.py    # Main agent implementation (LangGraph + AgentCore)
-├── deploy.py                 # Complete deployment script
-├── test_agent.py             # Comprehensive test suite
-├── test_broker_card.py       # Broker card functionality demonstration
-├── tools/                    # Organized tool modules
-│   ├── __init__.py          # Tool imports and exports
-│   ├── browser_tool.py       # AgentCore Browser Tool integration
-│   ├── broker_card_tools.py  # Broker profile management tools
-│   └── memory_tools.py       # AgentCore Memory integration
-├── images/                   # Architecture diagrams and screenshots
-│   └── market-trends-agent-architecture.png
-├── docs/                     # Documentation
-│   └── DEPLOYMENT.md        # Detailed deployment guide
-├── pyproject.toml            # uv project configuration & dependencies
-├── uv.lock                   # uv lock file (auto-generated)
-├── requirements.txt          # Python dependencies (legacy support)
-├── broker_card.txt          # Example broker profile format
-├── broker_card_template.txt  # Broker card template
-└── .bedrock_agentcore.yaml  # AgentCore configuration
 ```
 
 ## Usage Examples
@@ -254,6 +225,44 @@ aws logs tail /aws/bedrock-agentcore/runtimes/{agent-id}-DEFAULT --follow
 - Built-in health check endpoints
 - Monitor agent availability and response times
 
+## Cleanup
+
+### Complete Resource Cleanup
+When you're done with the agent, use the cleanup script to remove all AWS resources:
+
+```bash
+# Complete cleanup (removes everything)
+uv run python cleanup.py
+
+# Preview what would be deleted (dry run)
+uv run python cleanup.py --dry-run
+
+# Keep IAM roles (useful if shared with other projects)
+uv run python cleanup.py --skip-iam
+
+# Cleanup in different region
+uv run python cleanup.py --region us-west-2
+```
+
+**What gets cleaned up:**
+- ✅ AgentCore Runtime instances
+- ✅ AgentCore Memory instances  
+- ✅ ECR repositories and container images
+- ✅ CodeBuild projects
+- ✅ S3 build artifacts
+- ✅ SSM parameters
+- ✅ IAM roles and policies (unless `--skip-iam`)
+- ✅ Local deployment files
+
+### Manual Cleanup (if needed)
+If the automated cleanup fails, you can manually remove resources:
+
+1. **AgentCore Runtime**: AWS Console → Bedrock → AgentCore → Runtimes
+2. **AgentCore Memory**: AWS Console → Bedrock → AgentCore → Memory
+3. **ECR Repository**: AWS Console → ECR → Repositories
+4. **IAM Roles**: AWS Console → IAM → Roles (search for "MarketTrendsAgent")
+5. **CodeBuild**: AWS Console → CodeBuild → Build projects
+
 ## Troubleshooting
 
 ### Common Issues
@@ -271,6 +280,11 @@ aws logs tail /aws/bedrock-agentcore/runtimes/{agent-id}-DEFAULT --follow
 3. **Permission Errors**
    - The deployment script creates all required IAM permissions
    - Check AWS credentials are configured correctly
+
+4. **Memory Instance Duplicates**
+   - The agent uses SSM Parameter Store to prevent race conditions
+   - If you see multiple memory instances, run: `uv run python cleanup.py`
+   - Then redeploy with: `uv run python deploy.py`
 
 ### Debug Information
 The deployment script includes comprehensive error reporting and will guide you through any issues.

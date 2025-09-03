@@ -2,9 +2,7 @@
 name = "market-trends-agent"
 version = "0.1.0"
 description = "Intelligent financial analysis agent using Amazon Bedrock AgentCore"
-authors = [
-    {name = "AWS Labs", email = "aws-labs@amazon.com"}
-]
+
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

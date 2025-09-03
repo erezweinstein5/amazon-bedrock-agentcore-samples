@@ -59,17 +59,10 @@ docs/
 
 # Project specific
 tests/
-test_*.py
-*_test.py
-
-# Deployment artifacts
-.agent_arn
-deploy_*.py
 
 # Bedrock AgentCore specific - keep config but exclude runtime files
-# .bedrock_agentcore.yaml  # Keep this for deployment
-# Dockerfile  # Keep this for building
-# .dockerignore  # Keep this for build context
+.bedrock_agentcore.yaml
+.dockerignore
 
 # Keep wheelhouse for offline installations
 # wheelhouse/
