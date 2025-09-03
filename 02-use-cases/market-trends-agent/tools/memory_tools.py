@@ -61,12 +61,43 @@ def cleanup_duplicate_memories():
 def create_memory():
     """Create or retrieve existing AgentCore Memory for the market trends agent with multiple memory strategies"""
     from bedrock_agentcore.memory.constants import StrategyType
+    import boto3
+    import json
     
     region = os.getenv('AWS_REGION', 'us-east-1')
     memory_name = "MarketTrendsAgentMultiStrategy"
     client = MemoryClient(region_name=region)
     
-    # Check if we have a saved memory ID file first
+    # Use SSM Parameter Store for distributed coordination
+    ssm_client = boto3.client('ssm', region_name=region)
+    param_name = f"/bedrock-agentcore/market-trends-agent/memory-id"
+    
+    # Check SSM Parameter Store for existing memory ID (distributed coordination)
+    try:
+        response = ssm_client.get_parameter(Name=param_name)
+        saved_memory_id = response['Parameter']['Value']
+        
+        # Verify this memory still exists and is active
+        memories = client.list_memories()
+        for memory in memories:
+            if (memory.get('id') == saved_memory_id and 
+                memory.get('status') == 'ACTIVE'):
+                logger.info(f"Using memory ID from SSM: {saved_memory_id}")
+                return client, saved_memory_id
+        
+        # Saved memory doesn't exist or isn't active, remove the parameter
+        logger.warning(f"Memory ID {saved_memory_id} from SSM is not active, removing parameter")
+        try:
+            ssm_client.delete_parameter(Name=param_name)
+        except:
+            pass
+            
+    except ssm_client.exceptions.ParameterNotFound:
+        logger.info("No memory ID found in SSM Parameter Store")
+    except Exception as e:
+        logger.warning(f"Error reading memory ID from SSM: {e}")
+    
+    # Fallback: Check local file for development/testing
     memory_id_file = '.memory_id'
     if os.path.exists(memory_id_file):
         try:
@@ -78,7 +109,21 @@ def create_memory():
             for memory in memories:
                 if (memory.get('id') == saved_memory_id and 
                     memory.get('status') == 'ACTIVE'):
-                    logger.info(f"Using saved memory ID: {saved_memory_id}")
+                    logger.info(f"Using saved memory ID from local file: {saved_memory_id}")
+                    
+                    # Save to SSM for future distributed access
+                    try:
+                        ssm_client.put_parameter(
+                            Name=param_name,
+                            Value=saved_memory_id,
+                            Type='String',
+                            Overwrite=True,
+                            Description='Memory ID for Market Trends Agent'
+                        )
+                        logger.info("Saved memory ID to SSM Parameter Store")
+                    except Exception as ssm_error:
+                        logger.warning(f"Could not save to SSM: {ssm_error}")
+                    
                     return client, saved_memory_id
             
             # Saved memory doesn't exist or isn't active, remove the file
@@ -105,9 +150,25 @@ def create_memory():
             memory_id = active_memories[0]['id']
             logger.info(f"Found existing ACTIVE memory '{memory_name}' with ID: {memory_id}")
             
-            # Save the memory ID to file for future use
-            with open(memory_id_file, 'w') as f:
-                f.write(memory_id)
+            # Save the memory ID to SSM Parameter Store for distributed access
+            try:
+                ssm_client.put_parameter(
+                    Name=param_name,
+                    Value=memory_id,
+                    Type='String',
+                    Overwrite=True,
+                    Description='Memory ID for Market Trends Agent'
+                )
+                logger.info("Saved existing memory ID to SSM Parameter Store")
+            except Exception as ssm_error:
+                logger.warning(f"Could not save to SSM: {ssm_error}")
+            
+            # Also save to local file for development
+            try:
+                with open('.memory_id', 'w') as f:
+                    f.write(memory_id)
+            except Exception as file_error:
+                logger.warning(f"Could not save to local file: {file_error}")
             
             # If there are multiple active memories, log a warning
             if len(active_memories) > 1:
@@ -118,71 +179,139 @@ def create_memory():
     except Exception as e:
         logger.warning(f"Error checking existing memories: {e}")
     
-    # Memory doesn't exist, create it
+    # Memory doesn't exist, create it with race condition protection
     logger.info("Creating new AgentCore Memory with multiple memory strategies...")
-    try:
-        # Define memory strategies for market trends agent
-        strategies = [
-            {
-                StrategyType.USER_PREFERENCE.value: {
-                    "name": "BrokerPreferences",
-                    "description": "Captures broker preferences, risk tolerance, and investment styles",
-                    "namespaces": ["market-trends/broker/{actorId}/preferences"]
-                }
-            },
-            {
-                StrategyType.SEMANTIC.value: {
-                    "name": "MarketTrendsSemantic",
-                    "description": "Stores financial facts, market analysis, and investment insights",
-                    "namespaces": ["market-trends/broker/{actorId}/semantic"]
-                }
-            }
-        ]
-        
-        memory = client.create_memory_and_wait(
-            name=memory_name,
-            description="Market Trends Agent with multi-strategy memory for broker financial interests",
-            strategies=strategies,  # Multiple memory strategies for comprehensive storage
-            event_expiry_days=90,  # Keep conversations for 90 days (longer for financial data)
-            max_wait=300,
-            poll_interval=10
-        )
-        memory_id = memory['id']
-        logger.info(f"Multi-strategy memory created successfully with ID: {memory_id}")
-        
-        # Save the memory ID to file for future use
-        with open(memory_id_file, 'w') as f:
-            f.write(memory_id)
-        
-        return client, memory_id
-        
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'ValidationException' and "already exists" in str(e):
-            # Race condition: memory was created between our check and create attempt
-            logger.info(f"Memory '{memory_name}' was created by another process, retrieving it...")
-            memories = client.list_memories()
-            memory_id = None
-            for memory in memories:
-                if (memory.get('id', '').startswith(memory_name + '-') and 
-                    memory.get('status') == 'ACTIVE'):
-                    memory_id = memory['id']
-                    break
+    
+    # Add retry logic to handle race conditions during deployment
+    import random
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            # Add small random delay to reduce race condition probability
+            if attempt > 0:
+                delay = random.uniform(1, 3) * attempt
+                logger.info(f"Retry attempt {attempt + 1} after {delay:.1f}s delay...")
+                import time
+                time.sleep(delay)
+                
+                # Re-check for existing memories before creating
+                memories = client.list_memories()
+                for memory in memories:
+                    if (memory.get('id', '').startswith(memory_name + '-') and 
+                        memory.get('status') == 'ACTIVE'):
+                        memory_id = memory['id']
+                        logger.info(f"Found memory created by another process: {memory_id}")
+                        
+                        # Save the memory ID to SSM and local file
+                        try:
+                            ssm_client.put_parameter(
+                                Name=param_name,
+                                Value=memory_id,
+                                Type='String',
+                                Overwrite=True,
+                                Description='Memory ID for Market Trends Agent'
+                            )
+                            logger.info("Saved memory ID to SSM Parameter Store")
+                        except Exception as ssm_error:
+                            logger.warning(f"Could not save to SSM: {ssm_error}")
+                        
+                        try:
+                            with open('.memory_id', 'w') as f:
+                                f.write(memory_id)
+                        except Exception as file_error:
+                            logger.warning(f"Could not save to local file: {file_error}")
+                        
+                        return client, memory_id
             
-            if memory_id:
-                logger.info(f"Found existing memory '{memory_name}' with ID: {memory_id}")
-                # Save the memory ID to file for future use
-                with open(memory_id_file, 'w') as f:
-                    f.write(memory_id)
-                return client, memory_id
+            # Define memory strategies for market trends agent
+            strategies = [
+                {
+                    StrategyType.USER_PREFERENCE.value: {
+                        "name": "BrokerPreferences",
+                        "description": "Captures broker preferences, risk tolerance, and investment styles",
+                        "namespaces": ["market-trends/broker/{actorId}/preferences"]
+                    }
+                },
+                {
+                    StrategyType.SEMANTIC.value: {
+                        "name": "MarketTrendsSemantic",
+                        "description": "Stores financial facts, market analysis, and investment insights",
+                        "namespaces": ["market-trends/broker/{actorId}/semantic"]
+                    }
+                }
+            ]
+            
+            memory = client.create_memory_and_wait(
+                name=memory_name,
+                description="Market Trends Agent with multi-strategy memory for broker financial interests",
+                strategies=strategies,  # Multiple memory strategies for comprehensive storage
+                event_expiry_days=90,  # Keep conversations for 90 days (longer for financial data)
+                max_wait=300,
+                poll_interval=10
+            )
+            memory_id = memory['id']
+            break  # Success, exit retry loop
+            
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ValidationException' and "already exists" in str(e):
+                # Another process created the memory, try to find it
+                logger.info(f"Memory creation conflict on attempt {attempt + 1}, checking for existing memory...")
+                try:
+                    memories = client.list_memories()
+                    for memory in memories:
+                        if (memory.get('id', '').startswith(memory_name + '-') and 
+                            memory.get('status') == 'ACTIVE'):
+                            memory_id = memory['id']
+                            logger.info(f"Using memory created by another process: {memory_id}")
+                            
+                            # Save the memory ID to file for future use
+                            with open(memory_id_file, 'w') as f:
+                                f.write(memory_id)
+                            
+                            return client, memory_id
+                except Exception as find_error:
+                    logger.warning(f"Error finding existing memory: {find_error}")
+                
+                if attempt == max_retries - 1:
+                    raise Exception(f"Could not create or find memory after {max_retries} attempts")
             else:
-                logger.error(f"Memory '{memory_name}' exists but could not retrieve ACTIVE ID")
-                raise Exception(f"Could not find ACTIVE memory '{memory_name}'")
-        else:
-            logger.error(f"Error creating memory: {e}")
-            raise
-    except Exception as e:
-        logger.error(f"Unexpected error creating memory: {e}")
-        raise
+                if attempt == max_retries - 1:
+                    logger.error(f"Error creating memory on final attempt: {e}")
+                    raise
+                else:
+                    logger.warning(f"Error creating memory on attempt {attempt + 1}: {e}")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Unexpected error creating memory: {e}")
+                raise
+            else:
+                logger.warning(f"Unexpected error on attempt {attempt + 1}: {e}")
+    
+    # If we get here, memory was created successfully
+    logger.info(f"Multi-strategy memory created successfully with ID: {memory_id}")
+    
+    # Save the memory ID to SSM Parameter Store for distributed access
+    try:
+        ssm_client.put_parameter(
+            Name=param_name,
+            Value=memory_id,
+            Type='String',
+            Overwrite=True,
+            Description='Memory ID for Market Trends Agent'
+        )
+        logger.info("Saved new memory ID to SSM Parameter Store")
+    except Exception as ssm_error:
+        logger.warning(f"Could not save to SSM: {ssm_error}")
+    
+    # Also save to local file for development
+    try:
+        with open('.memory_id', 'w') as f:
+            f.write(memory_id)
+    except Exception as file_error:
+        logger.warning(f"Could not save to local file: {file_error}")
+    
+    return client, memory_id
 
 def extract_actor_id(user_message: str) -> str:
     """Extract actor_id from broker card format or user message"""

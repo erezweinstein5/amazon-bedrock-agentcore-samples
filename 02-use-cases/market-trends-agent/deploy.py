@@ -92,6 +92,16 @@ class MarketTrendsAgentDeployer:
                     ],
                     "Resource": "*",
                     "Sid": "CloudWatchLogging"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ssm:GetParameter",
+                        "ssm:PutParameter",
+                        "ssm:DeleteParameter"
+                    ],
+                    "Resource": "arn:aws:ssm:*:*:parameter/bedrock-agentcore/market-trends-agent/*",
+                    "Sid": "SSMParameterAccess"
                 }
             ]
         }
