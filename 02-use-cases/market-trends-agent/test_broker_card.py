@@ -21,6 +21,9 @@ def test_broker_card_conversation():
     
     client = boto3.client('bedrock-agentcore', region_name='us-east-1')
     
+    # Create consistent session ID for memory persistence across interactions (min 33 chars)
+    session_id = "broker-card-test-session-2025-memory-persistence"
+    
     # Test 1: Send broker card format - This is how users should provide their profile
     broker_card_prompt = """Name: Maria Rodriguez
 Company: JP Morgan Chase
@@ -35,6 +38,7 @@ Recent Interests: blockchain technology, NFTs, metaverse"""
     
     print("🧪 Testing Broker Card Parsing...")
     print("=" * 50)
+    print(f"📋 Session ID: {session_id}")
     print("📋 Sending broker profile in structured format:")
     print(broker_card_prompt)
     print("\n" + "=" * 50)
@@ -46,7 +50,8 @@ Recent Interests: blockchain technology, NFTs, metaverse"""
         
         response = client.invoke_agent_runtime(
             agentRuntimeArn=runtime_arn,
-            payload=json.dumps({"prompt": broker_card_prompt})
+            runtimeSessionId=session_id,
+            payload=json.dumps({"prompt": broker_card_prompt}).encode('utf-8')
         )
         
         if 'response' in response:
@@ -64,7 +69,8 @@ Recent Interests: blockchain technology, NFTs, metaverse"""
             
             response2 = client.invoke_agent_runtime(
                 agentRuntimeArn=runtime_arn,
-                payload=json.dumps({"prompt": analysis_prompt})
+                runtimeSessionId=session_id,
+                payload=json.dumps({"prompt": analysis_prompt}).encode('utf-8')
             )
             
             if 'response' in response2:

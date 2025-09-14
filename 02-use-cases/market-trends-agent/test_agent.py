@@ -93,8 +93,8 @@ def run_comprehensive_tests(runtime_arn: str):
     print("=" * 60)
     print(f"📋 Testing ARN: {runtime_arn}")
     
-    # Create a consistent session ID for all tests to ensure memory persistence
-    session_id = "test-session-memory-persistence-2025"
+    # Create a consistent session ID for all tests to ensure memory persistence (min 33 chars)
+    session_id = "test-session-memory-persistence-2025-comprehensive"
     print(f"📋 Session ID: {session_id}")
     print()
     
