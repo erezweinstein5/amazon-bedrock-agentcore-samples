@@ -106,10 +106,11 @@ def test_agent_invocation():
         with open(arn_file, 'r') as f:
             agent_arn = f.read().strip()
         
-        # Use AgentCore Runtime client to invoke
-        from bedrock_agentcore_starter_toolkit import Runtime
-        
-        runtime = Runtime()
+        # Use boto3 bedrock-agentcore client to invoke
+        import boto3
+        import json
+        region = os.getenv('AWS_REGION', 'us-east-1')
+        client = boto3.client('bedrock-agentcore', region_name=region)
         
         # Test with a simple message
         test_payload = {
@@ -117,21 +118,31 @@ def test_agent_invocation():
         }
         
         logger.info("Sending test message to deployed agent...")
-        response = runtime.invoke(test_payload)
+        response = client.invoke_agent_runtime(
+            agentRuntimeArn=agent_arn,
+            payload=json.dumps(test_payload).encode('utf-8')
+        )
         
-        if response and len(str(response).strip()) > 0:
-            logger.info("✅ Agent responded successfully via AgentCore Runtime")
-            logger.info(f"Response preview: {str(response)[:200]}...")
-            return True
+        if response and 'response' in response:
+            # Read the streaming body
+            response_body = response['response'].read().decode('utf-8')
+            if response_body and len(response_body.strip()) > 0:
+                logger.info("✅ Agent responded successfully via AgentCore Runtime")
+                logger.info(f"Response preview: {response_body[:200]}...")
+                return True
+            else:
+                logger.error("❌ Agent returned empty response body")
+                logger.info(f"Status code: {response.get('statusCode')}")
+                return False
         else:
-            logger.error("❌ Agent returned empty response")
+            logger.error("❌ Agent returned no response")
+            logger.info(f"Full response: {response}")
             return False
             
     except Exception as e:
         logger.error(f"❌ Error invoking agent via runtime: {e}")
-        logger.info("💡 This is expected if dependencies aren't installed in test environment")
-        logger.info("💡 The agent should work when invoked through AgentCore Runtime")
-        return True  # Consider this a pass since it's a deployment test
+        logger.warning("⚠️  Agent invocation failed - this indicates the agent may not be properly deployed")
+        return False
 
 def main():
     """Run all tests"""
