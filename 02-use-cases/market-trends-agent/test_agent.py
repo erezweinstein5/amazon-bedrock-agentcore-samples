@@ -24,20 +24,49 @@ def load_agent_arn():
     with open(arn_file, 'r') as f:
         return f.read().strip()
 
-def invoke_agent(runtime_arn: str, prompt: str) -> str:
+def invoke_agent(runtime_arn: str, prompt: str, session_id: str = None) -> str:
     """Invoke the deployed agent with a prompt"""
     try:
         client = boto3.client('bedrock-agentcore', region_name='us-east-1')
         
-        response = client.invoke_agent_runtime(
-            agentRuntimeArn=runtime_arn,
-            payload=json.dumps({"prompt": prompt})
-        )
+        # Prepare the payload
+        payload = json.dumps({"prompt": prompt}).encode('utf-8')
         
-        if 'response' in response:
-            return response['response'].read().decode('utf-8')
+        # Build the request parameters
+        request_params = {
+            'agentRuntimeArn': runtime_arn,
+            'payload': payload
+        }
+        
+        # Add session ID if provided
+        if session_id:
+            request_params['runtimeSessionId'] = session_id
+        
+        response = client.invoke_agent_runtime(**request_params)
+        
+        # Handle different response types
+        if "text/event-stream" in response.get("contentType", ""):
+            # Handle streaming response
+            content = []
+            for line in response["response"].iter_lines(chunk_size=10):
+                if line:
+                    line = line.decode("utf-8")
+                    if line.startswith("data: "):
+                        line = line[6:]
+                    content.append(line)
+            return "\n".join(content)
+        elif response.get("contentType") == "application/json":
+            # Handle standard JSON response
+            content = []
+            for chunk in response.get("response", []):
+                content.append(chunk.decode('utf-8'))
+            return json.loads(''.join(content))
         else:
-            return str(response)
+            # Handle other response types
+            if 'response' in response:
+                return response['response'].read().decode('utf-8')
+            else:
+                return str(response)
             
     except Exception as e:
         logger.error(f"Error invoking agent: {e}")
@@ -63,6 +92,10 @@ def run_comprehensive_tests(runtime_arn: str):
     print("🚀 Market Trends Agent - Comprehensive Test Suite")
     print("=" * 60)
     print(f"📋 Testing ARN: {runtime_arn}")
+    
+    # Create a consistent session ID for all tests to ensure memory persistence
+    session_id = "test-session-memory-persistence-2025"
+    print(f"📋 Session ID: {session_id}")
     print()
     
     tests_passed = 0
@@ -74,7 +107,7 @@ def run_comprehensive_tests(runtime_arn: str):
     
     broker_intro = "Hi, I'm Sarah Chen from Morgan Stanley. I focus on growth investing and tech stocks for younger clients. Please remember my profile."
     
-    response1 = invoke_agent(runtime_arn, broker_intro)
+    response1 = invoke_agent(runtime_arn, broker_intro, session_id)
     print("✅ Response:", response1[:200] + "..." if len(response1) > 200 else response1)
     
     # Check if profile was acknowledged
@@ -92,7 +125,7 @@ def run_comprehensive_tests(runtime_arn: str):
     print("-" * 30)
     
     memory_test = "Hi, I'm Sarah Chen from Morgan Stanley. What do you remember about my investment preferences?"
-    response2 = invoke_agent(runtime_arn, memory_test)
+    response2 = invoke_agent(runtime_arn, memory_test, session_id)
     print("✅ Response:", response2[:200] + "..." if len(response2) > 200 else response2)
     
     # Check if memory was recalled
@@ -110,7 +143,7 @@ def run_comprehensive_tests(runtime_arn: str):
     print("-" * 30)
     
     market_request = "Get me the current Apple stock price and recent performance"
-    response3 = invoke_agent(runtime_arn, market_request)
+    response3 = invoke_agent(runtime_arn, market_request, session_id)
     print("✅ Response:", response3[:200] + "..." if len(response3) > 200 else response3)
     
     # Check if market data was attempted
@@ -128,7 +161,7 @@ def run_comprehensive_tests(runtime_arn: str):
     print("-" * 30)
     
     news_request = "Find recent news about AI and technology stocks"
-    response4 = invoke_agent(runtime_arn, news_request)
+    response4 = invoke_agent(runtime_arn, news_request, session_id)
     print("✅ Response:", response4[:200] + "..." if len(response4) > 200 else response4)
     
     # Check if news search was attempted
