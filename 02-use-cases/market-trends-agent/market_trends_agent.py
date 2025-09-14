@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from tools import get_stock_data, search_news
 from tools import parse_broker_profile_from_message, generate_market_summary_for_broker, get_broker_card_template, collect_broker_preferences_interactively
-from tools import create_memory, create_memory_tools
+from tools import get_memory_from_ssm, create_memory_tools
 from datetime import datetime
 import logging
 
@@ -21,8 +21,8 @@ def create_market_trends_agent():
     """Create and configure the LangGraph market trends agent with memory"""
     from langchain_aws import ChatBedrock
     
-    # Create memory
-    memory_client, memory_id = create_memory()
+    # Get memory from SSM (created during deployment)
+    memory_client, memory_id = get_memory_from_ssm()
     
     # Create session ID for this conversation, but actor_id will be determined from user input
     session_id = f"market-{datetime.now().strftime('%Y%m%d%H%M%S')}"
