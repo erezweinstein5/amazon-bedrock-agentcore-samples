@@ -1,7 +1,8 @@
 # CrewAI and instrumentation
 crewai
 crewai-tools
-aws-opentelemetry-distro~=0.10.1
+aws-opentelemetry-distro~=0.12.1
+opentelemetry-instrumentation-crewai
 ddgs
 boto3
 botocore
