@@ -208,7 +208,7 @@ def run_comprehensive_tests(runtime_arn: str):
     print("📊 TEST SUMMARY")
     print("=" * 60)
     print(f"Tests Passed: {tests_passed}/{total_tests}")
-    print(f"Success Rate: {(tests_passed/total_tests)*100:.0f}%")
+    print(f"Success Rate: {(tests_passed / total_tests) * 100:.0f}%")
 
     if tests_passed == total_tests:
         print("🎉 ALL TESTS PASSED - Agent is fully functional!")
