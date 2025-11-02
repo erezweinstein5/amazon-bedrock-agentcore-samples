@@ -446,36 +446,10 @@ def check_prerequisites():
         logger.error(f"❌ Missing required files: {missing_files}")
         return False
 
-    # Check Docker/Podman
-    import subprocess
-
-    container_runtime = None
-
-    # Try Docker first
-    try:
-        result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
-        if result.returncode == 0:
-            container_runtime = "docker"
-            logger.info("✅ Docker found")
-    except FileNotFoundError:
-        pass
-
-    # Try Podman if Docker not found
-    if not container_runtime:
-        try:
-            result = subprocess.run(
-                ["podman", "--version"], capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                container_runtime = "podman"
-                logger.info("✅ Podman found")
-        except FileNotFoundError:
-            pass
-
-    if not container_runtime:
-        logger.error("❌ Neither Docker nor Podman found")
-        logger.info("💡 Make sure Docker or Podman is installed and running")
-        return False
+    # Note: Docker/Podman not required - AgentCore uses AWS CodeBuild for container building
+    logger.info(
+        "✅ Container building will use AWS CodeBuild (no local Docker required)"
+    )
 
     # Check AWS credentials
     try:
