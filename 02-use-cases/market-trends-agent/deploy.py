@@ -127,6 +127,30 @@ class MarketTrendsAgentDeployer:
                     ],
                 },
                 {
+                    "Sid": "BedrockAgentCoreMemoryOperations",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock-agentcore:ListMemories",
+                        "bedrock-agentcore:CreateEvent",
+                        "bedrock-agentcore:RetrieveMemories",
+                        "bedrock-agentcore:GetMemoryStrategies",
+                        "bedrock-agentcore:DeleteMemory",
+                    ],
+                    "Resource": [
+                        f"arn:aws:bedrock-agentcore:{self.region}:{account_id}:memory/*"
+                    ],
+                },
+                {
+                    "Sid": "BedrockAgentCoreBrowserOperations",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock-agentcore:GetBrowserSession",
+                        "bedrock-agentcore:CreateBrowserSession",
+                        "bedrock-agentcore:DeleteBrowserSession",
+                    ],
+                    "Resource": "*",
+                },
+                {
                     "Effect": "Allow",
                     "Action": [
                         "ssm:GetParameter",
