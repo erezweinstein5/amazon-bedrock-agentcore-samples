@@ -41,51 +41,90 @@ class MarketTrendsAgentDeployer:
             ],
         }
 
-        # Comprehensive execution policy with all required permissions
+        # Get account ID and region for specific resource ARNs
+        account_id = boto3.client("sts").get_caller_identity()["Account"]
+
+        # Comprehensive execution policy with least privilege permissions
         execution_policy = {
             "Version": "2012-10-17",
             "Statement": [
                 {
+                    "Sid": "BedrockModelInvocation",
                     "Effect": "Allow",
                     "Action": [
                         "bedrock:InvokeModel",
                         "bedrock:InvokeModelWithResponseStream",
                     ],
-                    "Resource": "*",
-                    "Sid": "BedrockModelInvocation",
+                    "Resource": [
+                        "arn:aws:bedrock:*::foundation-model/*",
+                        f"arn:aws:bedrock:{self.region}:{account_id}:*",
+                    ],
+                },
+                {
+                    "Sid": "ECRImageAccess",
+                    "Effect": "Allow",
+                    "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+                    "Resource": [
+                        f"arn:aws:ecr:{self.region}:{account_id}:repository/*"
+                    ],
                 },
                 {
                     "Effect": "Allow",
-                    "Action": ["bedrock-agentcore:*"],
+                    "Action": ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
+                    "Resource": [
+                        f"arn:aws:logs:{self.region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*"
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["logs:DescribeLogGroups"],
+                    "Resource": [
+                        f"arn:aws:logs:{self.region}:{account_id}:log-group:*"
+                    ],
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                    "Resource": [
+                        f"arn:aws:logs:{self.region}:{account_id}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+                    ],
+                },
+                {
+                    "Sid": "ECRTokenAccess",
+                    "Effect": "Allow",
+                    "Action": ["ecr:GetAuthorizationToken"],
                     "Resource": "*",
-                    "Sid": "BedrockAgentCoreOperations",
                 },
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "ecr:GetAuthorizationToken",
-                        "ecr:BatchCheckLayerAvailability",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:BatchGetImage",
+                        "xray:PutTraceSegments",
+                        "xray:PutTelemetryRecords",
+                        "xray:GetSamplingRules",
+                        "xray:GetSamplingTargets",
                     ],
-                    "Resource": "*",
-                    "Sid": "ECRAccess",
+                    "Resource": ["*"],
                 },
                 {
                     "Effect": "Allow",
-                    "Action": ["xray:PutTraceSegments", "xray:PutTelemetryRecords"],
                     "Resource": "*",
-                    "Sid": "XRayTracing",
+                    "Action": "cloudwatch:PutMetricData",
+                    "Condition": {
+                        "StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}
+                    },
                 },
                 {
+                    "Sid": "GetAgentAccessToken",
                     "Effect": "Allow",
                     "Action": [
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                        "logs:PutLogEvents",
+                        "bedrock-agentcore:GetWorkloadAccessToken",
+                        "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                        "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
                     ],
-                    "Resource": "*",
-                    "Sid": "CloudWatchLogging",
+                    "Resource": [
+                        f"arn:aws:bedrock-agentcore:{self.region}:{account_id}:workload-identity-directory/default",
+                        f"arn:aws:bedrock-agentcore:{self.region}:{account_id}:workload-identity-directory/default/workload-identity/market-trends-agent-*",
+                    ],
                 },
                 {
                     "Effect": "Allow",
@@ -94,7 +133,7 @@ class MarketTrendsAgentDeployer:
                         "ssm:PutParameter",
                         "ssm:DeleteParameter",
                     ],
-                    "Resource": "arn:aws:ssm:*:*:parameter/bedrock-agentcore/market-trends-agent/*",
+                    "Resource": f"arn:aws:ssm:{self.region}:{account_id}:parameter/bedrock-agentcore/market-trends-agent/*",
                     "Sid": "SSMParameterAccess",
                 },
             ],
