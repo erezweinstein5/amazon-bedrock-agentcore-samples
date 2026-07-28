@@ -283,6 +283,7 @@ plan/
 # Docker files (generated)
 **/Dockerfile
 !02-use-cases/02-workflow-automation-agents/event-driven-claims-agent/app/claimsagent/Dockerfile
+!06-workshops/01-AgentCore-runtime/12-coding-agents/03-codex-with-efs/Dockerfile
 
 # Agent state and runtime files
 **/.agent_arn*
