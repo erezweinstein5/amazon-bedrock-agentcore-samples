@@ -13,6 +13,7 @@ import sys
 import time
 
 import boto3
+import botocore.exceptions
 
 # ── Load config ──────────────────────────────────────────────────────────────
 
@@ -67,12 +68,18 @@ if not all([SUBNET_1, SUBNET_2, SECURITY_GROUP]):
 PROTOCOL = "HTTP"
 EFS_MOUNT_PATH = "/mnt/efs"
 
+# Bedrock inference region. Defaults to the runtime's region, but can be
+# overridden — see the model availability table in the README, since not every
+# GPT-5.6 model is served in every region.
+BEDROCK_REGION = cfg("BEDROCK_REGION", REGION)
+
 ENVIRONMENT_VARIABLES = {
     "CODEX_HOME": f"{EFS_MOUNT_PATH}/.codex",
     "WORKSPACE_DIR": f"{EFS_MOUNT_PATH}/workspace",
+    "SKILLS_DIR": f"{EFS_MOUNT_PATH}/.codex/skills",
     "CODEX_MODEL": CODEX_MODEL,
     "CODEX_REASONING_EFFORT": CODEX_REASONING_EFFORT,
-    "BEDROCK_REGION": REGION,
+    "BEDROCK_REGION": BEDROCK_REGION,
 }
 
 print(f"Region:     {REGION}")
@@ -144,10 +151,11 @@ def create_execution_role() -> str:
             },
             {
                 # Classic bedrock-runtime invocation. Codex's amazon-bedrock
-                # provider does not use this path today (see BedrockMantleInference
-                # below); it is granted so the sample keeps working if you point
-                # Codex at a bedrock-runtime model via a custom model_providers
-                # entry in config.toml. Drop this statement if you don't.
+                # provider does not use this path (see BedrockMantleInference
+                # below); it is granted only so the sample keeps working if you
+                # point Codex at a bedrock-runtime model via a custom
+                # model_providers entry in config.toml. Drop this statement if
+                # you stay on the default GPT-5.6 models.
                 "Sid": "BedrockModelInvocation",
                 "Effect": "Allow",
                 "Action": [
@@ -156,14 +164,16 @@ def create_execution_role() -> str:
                 ],
                 "Resource": [
                     "arn:aws:bedrock:*::foundation-model/*",
-                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:*",
+                    f"arn:aws:bedrock:{REGION}:{ACCOUNT_ID}:inference-profile/*",
                 ],
             },
             {
                 # Required for the GPT-5.6 family (sol/terra/luna), which is
                 # served through the bedrock-mantle endpoint rather than the
-                # classic bedrock-runtime InvokeModel API. Equivalent to the
-                # AmazonBedrockMantleInferenceAccess managed policy.
+                # classic bedrock-runtime InvokeModel API. These are the two
+                # actions Codex actually calls; the AmazonBedrockMantleInferenceAccess
+                # managed policy is a broader alternative if you prefer a
+                # managed grant.
                 "Sid": "BedrockMantleInference",
                 "Effect": "Allow",
                 "Action": [
@@ -192,7 +202,11 @@ def create_execution_role() -> str:
                     "elasticfilesystem:ClientWrite",
                 ],
                 "Resource": f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:file-system/*",
-                "Condition": {
+                # Scoped to this sample's access point, not every access point
+                # in the account.
+                "Condition": {"StringEquals": {"elasticfilesystem:AccessPointArn": EFS_AP_ARN}}
+                if EFS_AP_ARN
+                else {
                     "ArnLike": {
                         "elasticfilesystem:AccessPointArn": f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:access-point/*",
                     }
@@ -273,7 +287,19 @@ def create_runtime(role_arn: str) -> dict:
         ]
 
     print(f"\nCreating AgentCore Runtime '{AGENT_NAME}'...")
-    response = control.create_agent_runtime(**create_params)
+    try:
+        response = control.create_agent_runtime(**create_params)
+    except botocore.exceptions.ParamValidationError as e:
+        if "filesystemConfigurations" in str(e):
+            print(
+                "\nError: this boto3 does not know 'filesystemConfigurations', so it cannot"
+                f"\nmount EFS (installed: {boto3.__version__}). Install a current boto3 in a"
+                "\nvirtualenv as described in the README, then rerun:"
+                "\n    uv venv --python 3.13 .venv && source .venv/bin/activate"
+                "\n    uv pip install boto3 awscli --force-reinstall --no-cache-dir"
+            )
+            sys.exit(1)
+        raise
 
     runtime_id = response["agentRuntimeId"]
     runtime_arn = response["agentRuntimeArn"]

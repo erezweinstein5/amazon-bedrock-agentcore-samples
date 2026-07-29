@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Paths below (cfn-vpc.yaml, Dockerfile, envvars.config) are relative to this
+# script, so run from its directory regardless of where it was invoked.
+cd "$(cd "$(dirname "$0")" && pwd)"
+
 REGION="${1:-us-west-2}"
 STACK_NAME="agentcore-codex-demo"
 
@@ -90,6 +94,7 @@ cat > envvars.config <<CFGEOF
 AGENTCORE_AGENT_NAME=${AGENT_NAME}
 AGENTCORE_REGION=${REGION}
 AGENTCORE_ECR_URI=${ECR_URI}
+AGENTCORE_ECR_REPO=${ECR_REPO}
 AGENTCORE_STACK_NAME=${STACK_NAME}
 AGENTCORE_VPC_ID=${VPC_ID}
 AGENTCORE_SUBNET_1=${PRIVATE_SUBNET_1}

@@ -13,6 +13,9 @@ process.on("unhandledRejection", (err) => {
 const PORT = process.env.PORT || 8080;
 const CODEX_HOME = process.env.CODEX_HOME || "/mnt/efs/.codex";
 const WORKSPACE_DIR = process.env.WORKSPACE_DIR || "/mnt/efs/workspace";
+// Codex's native skills directory. Anything written here by one session is
+// discovered automatically by every later session that mounts the same EFS.
+const SKILLS_DIR = process.env.SKILLS_DIR || path.join(CODEX_HOME, "skills");
 const BEDROCK_REGION = process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-west-2";
 const CODEX_MODEL = process.env.CODEX_MODEL || "openai.gpt-5.6-terra";
 const REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || "medium";
@@ -51,16 +54,51 @@ function writeFileIfMissing(filePath, contents, mode) {
   }
 }
 
+// config.toml is rewritten on every boot, not just when missing. CODEX_HOME is
+// on EFS and outlives the container, so a write-once file would pin the model
+// and region chosen by the very first deployment and silently ignore every
+// later `CODEX_MODEL=... python deploy.py` or update.py.
+//
+// Codex appends its own state to this file (e.g. [projects."<ws>"] trust_level),
+// so preserve anything after the block this function owns.
+const MANAGED_MARKER = "# ── managed by server.js: rewritten on every boot ──";
+
+function writeCodexConfig() {
+  const filePath = path.join(CODEX_HOME, "config.toml");
+  let appended = "";
+  try {
+    const existing = fs.readFileSync(filePath, "utf8");
+    const idx = existing.indexOf(MANAGED_MARKER);
+    if (idx === -1) {
+      // Written by an older image, or by Codex itself. Keep it verbatim.
+      appended = existing.trim();
+    } else {
+      const rest = existing.slice(idx + MANAGED_MARKER.length);
+      const endOfManaged = rest.indexOf("\n# ── end managed ──");
+      if (endOfManaged !== -1) {
+        appended = rest.slice(endOfManaged + "\n# ── end managed ──".length).trim();
+      }
+    }
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+
+  const managed = [MANAGED_MARKER, codexConfigToml().trimEnd(), "# ── end managed ──"].join("\n");
+  const contents = appended ? `${managed}\n\n${appended}\n` : `${managed}\n`;
+  fs.writeFileSync(filePath, contents, { mode: 0o600 });
+}
+
 function initPersistentState() {
   fs.mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o750 });
+  fs.mkdirSync(SKILLS_DIR, { recursive: true, mode: 0o750 });
 
   // Fail fast and loudly if the EFS access point is not writable.
   const probe = path.join(CODEX_HOME, ".write-probe");
   fs.writeFileSync(probe, "ok", { mode: 0o600 });
   fs.rmSync(probe);
 
-  writeFileIfMissing(path.join(CODEX_HOME, "config.toml"), codexConfigToml(), 0o600);
+  writeCodexConfig();
   writeFileIfMissing(
     path.join(CODEX_HOME, "gitconfig"),
     ["[user]", "\tname = AgentCore Bot", "\temail = agentcore@example.com", ""].join("\n"),
@@ -77,7 +115,7 @@ function initPersistentState() {
     }
   }
 
-  console.log(`[init] CODEX_HOME=${CODEX_HOME} WORKSPACE_DIR=${WORKSPACE_DIR}`);
+  console.log(`[init] CODEX_HOME=${CODEX_HOME} WORKSPACE_DIR=${WORKSPACE_DIR} SKILLS_DIR=${SKILLS_DIR}`);
   console.log(`[init] model=${CODEX_MODEL} region=${BEDROCK_REGION}`);
 }
 
@@ -112,7 +150,13 @@ function getCodex() {
   return codexPromise;
 }
 
+// sandboxMode "workspace-write" makes only workingDirectory (plus temp dirs)
+// writable. SKILLS_DIR lives outside the workspace, so it has to be granted
+// explicitly — the SDK forwards additionalDirectories as `codex --add-dir`.
+// Without it Codex cannot write the shared skill, and approvalPolicy "never"
+// leaves it no way to ask.
 const THREAD_OPTIONS = {
+  additionalDirectories: [SKILLS_DIR],
   approvalPolicy: "never",
   model: CODEX_MODEL,
   modelReasoningEffort: REASONING_EFFORT,
@@ -130,7 +174,9 @@ async function runCodex(prompt, threadId) {
     ? codex.resumeThread(threadId, THREAD_OPTIONS)
     : codex.startThread(THREAD_OPTIONS);
 
-  console.log(`[runCodex] threadId=${threadId || "(new)"} prompt="${prompt}"`);
+  // config.toml sets otel log_user_prompt = false; don't undo that by echoing
+  // the prompt into CloudWatch. Length only.
+  console.log(`[runCodex] threadId=${threadId || "(new)"} promptChars=${prompt.length}`);
 
   let turn;
   try {
@@ -183,11 +229,26 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST") {
     try {
       const body = await readBody(req);
-      console.log(`[POST] raw body: ${body}`);
-      const { prompt, threadId } = JSON.parse(body);
+      console.log(`[POST] ${body.length} bytes`);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "body must be valid JSON" }));
+        return;
+      }
+
+      const { prompt, threadId } = parsed;
       if (!prompt || typeof prompt !== "string") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "prompt is required and must be a string" }));
+        return;
+      }
+      if (threadId !== undefined && typeof threadId !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "threadId must be a string" }));
         return;
       }
       const result = await runCodex(prompt, threadId);
@@ -210,7 +271,14 @@ const server = http.createServer(async (req, res) => {
   res.end();
 });
 
-initPersistentState();
+// The uncaughtException handler above only logs, so an EFS failure here would
+// otherwise exit 0 with nothing listening. Fail loudly instead.
+try {
+  initPersistentState();
+} catch (err) {
+  console.error("[FATAL] initPersistentState failed:", err.stack || err);
+  process.exit(1);
+}
 
 server.listen(PORT, () => {
   console.log(`Codex agent listening on port ${PORT}`);

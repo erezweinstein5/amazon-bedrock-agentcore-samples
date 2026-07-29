@@ -5,6 +5,11 @@ Parameters:
   VpcCidr:
     Type: String
     Default: "10.0.0.0/16"
+    Description: >-
+      VPC CIDR. Must be a /16; the four /24 subnets are carved out of it
+      (public 1-2, private 11-12), so overriding this shifts them with it.
+    AllowedPattern: "^(\\d{1,3}\\.){3}\\d{1,3}/16$"
+    ConstraintDescription: Must be a valid /16 CIDR block, e.g. 10.0.0.0/16
 
 Mappings:
   AgentCoreAZs:
@@ -95,7 +100,7 @@ Resources:
               Public subnet requires MapPublicIpOnLaunch for tutorial accessibility; disable in production
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: "10.0.1.0/24"
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 16, 8]]
       AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
       MapPublicIpOnLaunch: true
       Tags:
@@ -112,7 +117,7 @@ Resources:
               Public subnet requires MapPublicIpOnLaunch for tutorial accessibility; disable in production
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: "10.0.2.0/24"
+      CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 16, 8]]
       AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
       MapPublicIpOnLaunch: true
       Tags:
@@ -125,7 +130,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: "10.0.11.0/24"
+      CidrBlock: !Select [11, !Cidr [!Ref VpcCidr, 16, 8]]
       AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
       Tags:
         - Key: Name
@@ -135,7 +140,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: "10.0.12.0/24"
+      CidrBlock: !Select [12, !Cidr [!Ref VpcCidr, 16, 8]]
       AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
       Tags:
         - Key: Name

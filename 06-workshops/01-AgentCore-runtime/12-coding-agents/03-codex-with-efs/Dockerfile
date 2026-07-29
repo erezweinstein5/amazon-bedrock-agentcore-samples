@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 
 WORKDIR /app
 COPY package.json ./
+# @openai/codex-sdk is pinned exactly in package.json. It pulls a ~300 MB
+# platform binary for linux/arm64, so expect this layer to take a while.
 RUN npm install --omit=dev && npm cache clean --force
 
 RUN userdel -r node && \

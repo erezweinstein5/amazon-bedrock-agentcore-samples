@@ -110,18 +110,19 @@ def main():
     region = config["region"]
 
     args = sys.argv[1:]
-    session_id = None
-    thread_id = None
 
-    if "--session" in args:
-        idx = args.index("--session")
-        session_id = args[idx + 1]
-        args = args[:idx] + args[idx + 2 :]
+    def take_flag(argv, flag):
+        """Pop `flag` and its value out of argv. Returns (value, remaining)."""
+        if flag not in argv:
+            return None, argv
+        idx = argv.index(flag)
+        if idx + 1 >= len(argv):
+            print(f"Error: {flag} requires a value.")
+            sys.exit(1)
+        return argv[idx + 1], argv[:idx] + argv[idx + 2 :]
 
-    if "--thread" in args:
-        idx = args.index("--thread")
-        thread_id = args[idx + 1]
-        args = args[:idx] + args[idx + 2 :]
+    session_id, args = take_flag(args, "--session")
+    thread_id, args = take_flag(args, "--thread")
 
     if args:
         prompts = [" ".join(args)]

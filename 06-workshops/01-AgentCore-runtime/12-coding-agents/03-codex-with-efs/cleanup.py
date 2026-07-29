@@ -94,24 +94,53 @@ def main():
     except Exception as e:
         print(f"  Warning: {e}")
 
-    # 4. Delete CloudFormation stack (VPC, EFS, SG, NAT, etc.)
+    # 4. Delete the ECR repository (created by setup.sh, holds the arm64 image)
+    ecr_repo = env_cfg.get("AGENTCORE_ECR_REPO", "agentcore-codex")
     try:
-        print(f"  Deleting CloudFormation stack: {stack_name}")
-        cfn.delete_stack(StackName=stack_name)
-        print("  Waiting for stack deletion (this may take a few minutes)...")
-        waiter = cfn.get_waiter("stack_delete_complete")
-        waiter.wait(StackName=stack_name, WaiterConfig={"Delay": 15, "MaxAttempts": 40})
-        print(f"  Stack deleted: {stack_name}")
+        session.client("ecr").delete_repository(repositoryName=ecr_repo, force=True)
+        print(f"  Deleted ECR repository: {ecr_repo}")
     except Exception as e:
         print(f"  Warning: {e}")
 
-    # 5. Remove local config files
-    for f in ["runtime_config.json", "envvars.config"]:
-        path = os.path.join(os.path.dirname(__file__), f)
-        if os.path.exists(path):
-            os.remove(path)
+    # 5. Delete CloudFormation stack (VPC, EFS, SG, NAT, etc.)
+    stack_deleted = False
+    try:
+        print(f"  Deleting CloudFormation stack: {stack_name}")
+        cfn.delete_stack(StackName=stack_name)
+        # Deleting the NAT Gateway alone routinely takes several minutes, and
+        # AgentCore releases its VPC network interfaces asynchronously after the
+        # runtime is gone, which blocks the subnets until it does. Allow 30
+        # minutes rather than the 10 a 40x15s waiter would give.
+        print("  Waiting for stack deletion (NAT Gateway and ENI release; up to ~30 min)...")
+        waiter = cfn.get_waiter("stack_delete_complete")
+        waiter.wait(StackName=stack_name, WaiterConfig={"Delay": 30, "MaxAttempts": 60})
+        print(f"  Stack deleted: {stack_name}")
+        stack_deleted = True
+    except Exception as e:
+        print(f"  Warning: {e}")
 
-    print(f"\nCleanup complete for {agent_name}")
+    # 6. Remove local config files, but only if the stack is really gone.
+    # Otherwise these files are the only record of what to retry, and a
+    # half-deleted stack keeps billing for the NAT Gateway, EIP and EFS.
+    if stack_deleted:
+        for f in ["runtime_config.json", "envvars.config"]:
+            path = os.path.join(os.path.dirname(__file__), f)
+            if os.path.exists(path):
+                os.remove(path)
+        print(f"\nCleanup complete for {agent_name}")
+    else:
+        print(f"\nStack '{stack_name}' was NOT deleted. Local config files kept so you can retry.")
+        print("  Any leftover NAT Gateway, EIP or EFS file system continues to bill hourly.")
+        print("\n  The usual cause is DELETE_FAILED on the private subnets: AgentCore")
+        print("  releases the network interfaces it attached to them only after the")
+        print("  runtime is gone, and until then the subnets have dependencies. The")
+        print("  interfaces are service-owned, so they cannot be detached by hand.")
+        print("  Confirm they are gone, then retry the delete:")
+        print(f"    aws ec2 describe-network-interfaces --region {region} \\")
+        print(f"        --filters Name=subnet-id,Values={env_cfg.get('AGENTCORE_SUBNET_1', '<subnet-1>')} \\")
+        print("        --query 'NetworkInterfaces[].NetworkInterfaceId'")
+        print(f"    aws cloudformation delete-stack --stack-name {stack_name} --region {region}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

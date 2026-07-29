@@ -25,9 +25,10 @@ Codex runs against models served by Amazon Bedrock through the runtime's IAM exe
                     │  │   root /codex)         │                      │
                     │  └────────────────────────┘                      │
                     │                                                  │
-                    │  /mnt/efs/.codex/      CODEX_HOME (threads,       │
-                    │                        config.toml, skills)      │
-                    │  /mnt/efs/workspace/   git repo Codex edits      │
+                    │  /mnt/efs/.codex/        CODEX_HOME (threads,     │
+                    │                          config.toml)            │
+                    │  /mnt/efs/.codex/skills/ shared skills (writable)│
+                    │  /mnt/efs/workspace/     git repo Codex edits    │
                     └──────────────────────────────────────────────────┘
 ```
 
@@ -47,10 +48,18 @@ deploy.py creates:
 
 ## Prerequisites
 
+- AWS credentials in your shell with permission to create VPC, EFS, ECR, IAM and AgentCore resources
 - Bedrock access to a GPT-5.6 model (default `openai.gpt-5.6-terra`). See [Model availability](#model-availability).
 - Docker with buildx (the runtime requires `linux/arm64`)
 
+> **Cost:** Step 1 provisions a NAT Gateway, an Elastic IP and an EFS file system. These bill hourly whether or not you invoke the agent, so run [Step 5](#step-5--cleanup) when you are done.
+
 ### Python environment
+
+Use a fresh virtualenv rather than a system boto3. Mounting EFS relies on the
+`filesystemConfigurations` parameter of `create_agent_runtime`, which older
+boto3 releases do not know about; `deploy.py` fails with a clear message if it
+detects one.
 
 ```bash
 uv venv --python 3.13 .venv
@@ -99,8 +108,10 @@ Send a prompt to the deployed agent. The response includes both a `_runtimeSessi
 **Session A** — create a shared skill on the persistent filesystem:
 
 ```bash
-python invoke.py "can u create a new skill, to review python code? This skill should be created into /mnt/efs/skills/"
+python invoke.py "can u create a new skill, to review python code? This skill should be created into /mnt/efs/.codex/skills/"
 ```
+
+`/mnt/efs/.codex/skills/` is Codex's native skills directory, so a skill written here is not just a file on a shared disk — it is advertised to every later session as an available skill.
 
 Continue the conversation within the same session:
 
@@ -111,10 +122,10 @@ python invoke.py --session <session-a-id> "now add unit tests for that skill"
 **Session B** — a completely new session accesses the same filesystem and uses the skill created by Session A:
 
 ```bash
-python invoke.py "list the skills available in /mnt/efs/skills/ and use the python review skill to review this code: def add(a,b): return a+b"
+python invoke.py "list the skills available in /mnt/efs/.codex/skills/ and use the python review skill to review this code: def add(a,b): return a+b"
 ```
 
-Both sessions share `/mnt/efs`, so anything written by one session is immediately available to others.
+Both sessions share `/mnt/efs`, so anything written by one session is immediately available to others. Note that all of `/mnt/efs` is *readable*, but only `WORKSPACE_DIR` and `SKILLS_DIR` are writable — see [How Codex is configured for Bedrock](#how-codex-is-configured-for-bedrock).
 
 **Resume a Codex thread from a brand new session.** Because `CODEX_HOME` is on EFS, the conversation itself survives the session that created it:
 
@@ -135,7 +146,7 @@ python exec_cmd.py --session <session-id> "ls -l /mnt/efs/.codex/sessions"
 
 ### Step 5 — Cleanup
 
-Delete all AgentCore resources (runtime, IAM role) and the CloudFormation stack.
+Delete all AgentCore resources (runtime, IAM role), the ECR repository, and the CloudFormation stack.
 
 ```bash
 python cleanup.py
@@ -149,25 +160,48 @@ Or use the shell wrapper:
 
 Deleting the stack deletes the EFS file system and every Codex thread stored on it.
 
+Stack deletion can fail with `DELETE_FAILED` on the private subnets. AgentCore
+releases the network interfaces it attached to them only after the runtime is
+gone, and until it does the subnets still have dependencies. Those interfaces
+are service-owned, so they cannot be detached by hand. The NAT Gateway and EFS
+file system are deleted before this point, so the expensive resources are
+already released; wait for the interfaces to disappear and rerun the delete:
+
+```bash
+aws ec2 describe-network-interfaces --region <region> \
+    --filters Name=subnet-id,Values=<private-subnet-1> \
+    --query 'NetworkInterfaces[].NetworkInterfaceId'
+aws cloudformation delete-stack --stack-name agentcore-codex-demo --region <region>
+```
+
 ## How Codex is configured for Bedrock
 
-Codex reads its provider configuration from `$CODEX_HOME/config.toml`. `server.js` writes this file on first boot if it is absent:
+Codex reads its provider configuration from `$CODEX_HOME/config.toml`. `server.js` rewrites the block it owns on every boot, so changing `CODEX_MODEL` and redeploying takes effect even though `CODEX_HOME` is on EFS and outlives the container. Anything Codex itself appends to the file (such as `[projects."..."] trust_level`) is preserved below the managed block:
 
 ```toml
+# ── managed by server.js: rewritten on every boot ──
 model_provider = "amazon-bedrock"
 model = "openai.gpt-5.6-terra"
 model_reasoning_effort = "medium"
 check_for_update_on_startup = false
 
 [model_providers.amazon-bedrock.aws]
-region = "us-west-2"
+region = "<BEDROCK_REGION>"
+
+[otel]
+exporter = "none"
+metrics_exporter = "none"
+trace_exporter = "none"
+log_user_prompt = false
+# ── end managed ──
 ```
 
-Three details matter:
+Four details matter:
 
 - **Credentials come from the execution role.** `server.js` strips `OPENAI_API_KEY`, `CODEX_API_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, and `AWS_PROFILE` from the environment it hands to Codex, so the container cannot silently fall back to a different identity.
 - **The workspace must be a git repository.** Codex refuses to run with `skipGitRepoCheck: false` outside a repo, so `server.js` runs `git init -b main` in `WORKSPACE_DIR` on first boot. This is what gives Codex a diff to reason about.
-- **The provider talks to `bedrock-mantle`, which needs extra IAM.** Codex's `amazon-bedrock` provider calls the OpenAI-compatible `bedrock-mantle` endpoint (`https://bedrock-mantle.<region>.api.aws/openai/v1/responses`), not `bedrock-runtime:InvokeModel`. `deploy.py` therefore grants `bedrock-mantle:CreateInference` and `bedrock-mantle:CallWithBearerToken` — equivalent to the `AmazonBedrockMantleInferenceAccess` managed policy.
+- **The provider talks to `bedrock-mantle`, which needs extra IAM.** Codex's `amazon-bedrock` provider calls the OpenAI-compatible `bedrock-mantle` endpoint (`https://bedrock-mantle.<region>.api.aws/openai/v1/responses`), not `bedrock-runtime:InvokeModel`. `deploy.py` therefore grants `bedrock-mantle:CreateInference` and `bedrock-mantle:CallWithBearerToken` — the two actions Codex actually calls. The `AmazonBedrockMantleInferenceAccess` managed policy is a broader alternative if you prefer a managed grant.
+- **Writes outside the workspace must be granted explicitly.** `sandboxMode: "workspace-write"` makes only `WORKSPACE_DIR` writable, and `approvalPolicy: "never"` means Codex cannot ask for more. `server.js` passes `additionalDirectories: [SKILLS_DIR]` so the shared skills directory is writable too; anything else under `/mnt/efs` is readable but not writable.
 
 ## Model availability
 
@@ -179,15 +213,15 @@ Because the `amazon-bedrock` provider only reaches the `bedrock-mantle` endpoint
 | `openai.gpt-5.6-luna` | yes | yes |
 | `openai.gpt-5.6-sol` | yes | no |
 
-Check other regions before overriding the default:
+To check a model in another region, ask the deployed agent — it already holds
+credentials for the endpoint, so nothing extra needs to be exported locally:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "https://bedrock-mantle.$REGION.api.aws/openai/v1/responses" \
-  -H "Authorization: Bearer $AWS_BEARER_TOKEN_BEDROCK" \
-  -H 'Content-Type: application/json' \
-  -d "{\"model\":\"$CODEX_MODEL\",\"input\":\"ping\"}"
+python invoke.py "what model are you running as? reply with just the model id"
 ```
+
+A model that is not served in `BEDROCK_REGION` fails the turn with
+`404 ... does not exist`, visible in the response and in CloudWatch.
 
 ## Request and response format
 
@@ -213,18 +247,20 @@ Response:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CODEX_HOME` | `/mnt/efs/.codex` | Codex state: threads, `config.toml`, skills |
+| `CODEX_HOME` | `/mnt/efs/.codex` | Codex state: threads and `config.toml` |
 | `WORKSPACE_DIR` | `/mnt/efs/workspace` | Git repo Codex reads and writes |
+| `SKILLS_DIR` | `$CODEX_HOME/skills` | Shared skills; granted as a writable root |
 | `CODEX_MODEL` | `openai.gpt-5.6-terra` | Bedrock model ID (GPT-5.6 family only) |
-| `CODEX_REASONING_EFFORT` | `medium` | `minimal`, `low`, `medium`, or `high` |
-| `BEDROCK_REGION` | runtime region | Region for Bedrock inference |
+| `CODEX_REASONING_EFFORT` | `medium` | `minimal`, `low`, `medium`, `high`, or `xhigh` |
+| `BEDROCK_REGION` | runtime region | Region for Bedrock inference; override to reach a model not served locally |
 | `PORT` | `8080` | HTTP listen port |
 
 ## Notes for production
 
 This is a tutorial sample. Before production use, consider:
 
-- Codex runs with `approvalPolicy: "never"` and `sandboxMode: "workspace-write"`, so it edits files under `WORKSPACE_DIR` without asking. Scope the access point path accordingly.
+- Codex runs with `approvalPolicy: "never"` and `sandboxMode: "workspace-write"`, so it edits files under `WORKSPACE_DIR` and `SKILLS_DIR` without asking. Scope the access point path accordingly, and keep `additionalDirectories` as narrow as the demo allows.
 - The security group allows all egress and NFS from the whole VPC CIDR. Restrict both.
 - There is no concurrency control. Two simultaneous turns against the same thread can interleave writes on EFS; add a lock if you invoke concurrently.
+- Codex keeps some of its state in WAL-mode SQLite databases under `CODEX_HOME`. SQLite's WAL mode is not designed for concurrent access from multiple hosts over NFS. Thread resume relies on the `sessions/` rollout files rather than these databases, so the sample works, but do not assume the SQLite state is safe to share under real concurrency.
 - Enable VPC Flow Logs and EFS backups.

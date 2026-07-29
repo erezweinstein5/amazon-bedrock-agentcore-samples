@@ -90,6 +90,9 @@ def main():
 
     if "--session" in args:
         idx = args.index("--session")
+        if idx + 1 >= len(args):
+            print("Error: --session requires a value.")
+            sys.exit(1)
         session_id = args[idx + 1]
         args = args[:idx] + args[idx + 2 :]
 
