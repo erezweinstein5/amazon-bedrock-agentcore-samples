@@ -63,8 +63,8 @@ def invoke(
     runtime_arn: str,
     prompt: str,
     region: str,
-    session_id: str = None,
-    thread_id: str = None,
+    session_id: str | None = None,
+    thread_id: str | None = None,
 ) -> dict:
     client = boto3.client(
         "bedrock-agentcore",

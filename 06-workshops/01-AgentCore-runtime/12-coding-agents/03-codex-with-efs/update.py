@@ -81,25 +81,25 @@ def load_runtime_config() -> dict:
 def update_runtime(runtime_id: str, role_arn: str) -> dict:
     control = session.client("bedrock-agentcore-control", region_name=REGION)
 
-    update_params = dict(
-        agentRuntimeId=runtime_id,
-        agentRuntimeArtifact={
+    update_params = {
+        "agentRuntimeId": runtime_id,
+        "agentRuntimeArtifact": {
             "containerConfiguration": {
                 "containerUri": ECR_URI,
             }
         },
-        roleArn=role_arn,
-        networkConfiguration={
+        "roleArn": role_arn,
+        "networkConfiguration": {
             "networkMode": "VPC",
             "networkModeConfig": {
                 "subnets": [SUBNET_1, SUBNET_2],
                 "securityGroups": [SECURITY_GROUP],
             },
         },
-        protocolConfiguration={"serverProtocol": PROTOCOL},
-        environmentVariables=ENVIRONMENT_VARIABLES,
-        description="Codex agent on AgentCore Runtime with EFS",
-    )
+        "protocolConfiguration": {"serverProtocol": PROTOCOL},
+        "environmentVariables": ENVIRONMENT_VARIABLES,
+        "description": "Codex agent on AgentCore Runtime with EFS",
+    }
 
     if EFS_AP_ARN:
         update_params["filesystemConfigurations"] = [

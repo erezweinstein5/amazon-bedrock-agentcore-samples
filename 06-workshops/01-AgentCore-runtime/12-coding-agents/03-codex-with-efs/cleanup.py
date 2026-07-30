@@ -19,6 +19,14 @@ import sys
 import time
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+# Cleanup is best-effort: a resource that is already gone, or a delete that the
+# service rejects, must not stop the remaining steps — otherwise a single failure
+# leaves the expensive resources (NAT Gateway, EIP, EFS) billing. ClientError
+# covers service-side rejections; BotoCoreError covers waiter timeouts and
+# connection problems.
+AWS_ERRORS = (BotoCoreError, ClientError)
 
 
 def load_config(filename):
@@ -69,7 +77,7 @@ def main():
         if endpoints.get("runtimeEndpoints"):
             print("  Waiting for endpoint deletion...")
             time.sleep(30)
-    except Exception as e:
+    except AWS_ERRORS as e:
         print(f"  Warning: {e}")
 
     # 2. Delete AgentCore runtime
@@ -78,7 +86,7 @@ def main():
         control.delete_agent_runtime(agentRuntimeId=runtime_id)
         print("  Waiting for runtime deletion...")
         time.sleep(30)
-    except Exception as e:
+    except AWS_ERRORS as e:
         print(f"  Warning: {e}")
 
     # 3. Delete AgentCore IAM execution role
@@ -91,7 +99,7 @@ def main():
         print(f"  Deleted IAM role: {role_name}")
     except iam.exceptions.NoSuchEntityException:
         print(f"  IAM role not found: {role_name}")
-    except Exception as e:
+    except AWS_ERRORS as e:
         print(f"  Warning: {e}")
 
     # 4. Delete the ECR repository (created by setup.sh, holds the arm64 image)
@@ -99,7 +107,7 @@ def main():
     try:
         session.client("ecr").delete_repository(repositoryName=ecr_repo, force=True)
         print(f"  Deleted ECR repository: {ecr_repo}")
-    except Exception as e:
+    except AWS_ERRORS as e:
         print(f"  Warning: {e}")
 
     # 5. Delete CloudFormation stack (VPC, EFS, SG, NAT, etc.)
@@ -116,7 +124,7 @@ def main():
         waiter.wait(StackName=stack_name, WaiterConfig={"Delay": 30, "MaxAttempts": 60})
         print(f"  Stack deleted: {stack_name}")
         stack_deleted = True
-    except Exception as e:
+    except AWS_ERRORS as e:
         print(f"  Warning: {e}")
 
     # 6. Remove local config files, but only if the stack is really gone.

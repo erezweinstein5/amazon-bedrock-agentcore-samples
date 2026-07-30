@@ -256,25 +256,25 @@ def create_execution_role() -> str:
 def create_runtime(role_arn: str) -> dict:
     control = session.client("bedrock-agentcore-control", region_name=REGION)
 
-    create_params = dict(
-        agentRuntimeName=AGENT_NAME,
-        agentRuntimeArtifact={
+    create_params = {
+        "agentRuntimeName": AGENT_NAME,
+        "agentRuntimeArtifact": {
             "containerConfiguration": {
                 "containerUri": ECR_URI,
             }
         },
-        roleArn=role_arn,
-        networkConfiguration={
+        "roleArn": role_arn,
+        "networkConfiguration": {
             "networkMode": "VPC",
             "networkModeConfig": {
                 "subnets": [SUBNET_1, SUBNET_2],
                 "securityGroups": [SECURITY_GROUP],
             },
         },
-        protocolConfiguration={"serverProtocol": PROTOCOL},
-        environmentVariables=ENVIRONMENT_VARIABLES,
-        description="Codex agent on AgentCore Runtime with EFS",
-    )
+        "protocolConfiguration": {"serverProtocol": PROTOCOL},
+        "environmentVariables": ENVIRONMENT_VARIABLES,
+        "description": "Codex agent on AgentCore Runtime with EFS",
+    }
 
     if EFS_AP_ARN:
         create_params["filesystemConfigurations"] = [
