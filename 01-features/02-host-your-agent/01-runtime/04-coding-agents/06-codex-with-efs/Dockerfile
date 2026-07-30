@@ -21,5 +21,11 @@ ENV CODEX_HOME=/mnt/efs/.codex \
     PORT=8080
 
 EXPOSE 8080
+
+# server.js answers any GET with {"status":"healthy"}. start-period is generous
+# because the first boot mounts EFS and runs `git init` in the workspace.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS "http://127.0.0.1:${PORT}/" || exit 1
+
 USER agent
 CMD ["node", "/app/server.js"]

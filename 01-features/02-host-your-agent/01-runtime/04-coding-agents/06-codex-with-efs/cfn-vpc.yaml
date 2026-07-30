@@ -67,6 +67,13 @@ Resources:
           - id: W60
             reason: >-
               Demo/tutorial VPC does not require flow logs; enable VPC Flow Logs in production
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-VPC7
+            reason: >-
+              Demo/tutorial VPC does not require Flow Logs; they add ongoing
+              CloudWatch Logs cost for a sample that is torn down after use.
+              The README lists enabling VPC Flow Logs under production notes.
     Properties:
       CidrBlock: !Ref VpcCidr
       EnableDnsSupport: true
